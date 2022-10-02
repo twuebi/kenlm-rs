@@ -4,9 +4,11 @@ use clap::Parser;
 
 #[derive(Parser, Debug)]
 struct Args {
-    #[clap(long)]
+    #[clap(long, default_value = "test_data/carol.bin")]
     model_path: PathBuf,
-    #[clap(default_value = "This is a test sentence.")]
+    #[clap(
+        default_value = "the register of his burial was signed by the clergyman the clerk the undertaker and the chief mourner"
+    )]
     sentence: String,
     #[clap(action, short = 'b', default_value = "false")]
     score_bos: bool,
@@ -29,19 +31,10 @@ fn main() -> anyhow::Result<(), anyhow::Error> {
         true,
     )?;
 
-    // We constructed with_vocab: true
-    let vocab_ref = model.get_vocab().unwrap();
-    eprintln!(
-        "The vocab has {} elements. The first element is: {:?}, the tenth: {:?} and the last: {:?}",
-        vocab_ref.len(),
-        vocab_ref.get(0),
-        vocab_ref.get(10),
-        vocab_ref[vocab_ref.len() - 1]
-    );
     let inputs = sentence.split_ascii_whitespace().collect::<Vec<&str>>();
     let score = model.score_sentence(&inputs, score_bos, score_eos);
     eprintln!(
-        "Total score of the sentence \"{}\", calculated from rust: {:?}",
+        "Total score of the sentence \"{}\" is: {:?}",
         inputs.join(" "),
         score
     );
