@@ -5,13 +5,31 @@ use zerocopy::{AsBytes, FromBytes};
 use crate::cxx::bridge;
 use crate::Error;
 
+/// KenLM Model Header
+///
+/// This struct is stored in bytes 89-176 in binary KenLM models. It stores general
+/// information about the model. It is implemented here since we have to perform some
+/// validation of the model & load-configuration before dispatching to C++ to avoid
+/// violent crashes upon C++ runtime exceptions.
 #[repr(C)]
 #[derive(Copy, Clone, Debug, PartialEq, FromBytes)]
 pub struct FixedParameterHeader {
+    /// Order of the NGram model
     pub order: u8,
+    /// Probing multiplier for the probing storage model
     pub probing_multiplier: f32,
+    /// The model type, see src/cxx/lm/model_type.hh for further info
+    ///
+    /// PROBING = 0,
+    /// REST_PROBING = 1,
+    /// TRIE = 2,
+    /// QUANT_TRIE = 3,
+    /// ARRAY_TRIE = 4,
+    /// QUANT_ARRAY_TRIE = 5
     pub model_type: u32,
+    /// Does this binary store a vocabulary?
     pub has_vocabulary: u8, // this is actually a bool but FromBytes doesn't like those
+    /// undocumented
     pub search_version: u32,
 }
 

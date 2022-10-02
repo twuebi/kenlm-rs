@@ -10,10 +10,15 @@ use crate::cxx::{bridge, CxxModel};
 
 use self::builder::ModelBuilder;
 
+/// KenLM NGram model
+///
+/// This [Model] holds the C++ wrapper of the KenLM model and some information extracted from its
+/// headers which is accessible in [FixedParameterHeader]. Depending on model type and constructor
+/// parameters, it also stores the vocab as a [Vec<String>].
 pub struct Model {
     inner: CxxModel,
-    vocab: Option<Vec<String>>,
     fixed_parameters: FixedParameterHeader,
+    vocab: Option<Vec<String>>,
 }
 
 impl Model {
@@ -35,10 +40,10 @@ impl Model {
             .build()
     }
 
-    pub fn state_size(&self) -> usize {
-        self.inner.StateSize()
-    }
-
+    /// Get some information about the currently loaded model
+    ///
+    /// [FixedParameterHeader] holds information about the order, formats and some internals
+    /// of the currently loaded kenlm model.
     pub fn get_fixed_parameter_header(&self) -> &FixedParameterHeader {
         &self.fixed_parameters
     }
@@ -72,26 +77,32 @@ impl Model {
     /// You could also create a new out_state every time but that would be
     /// wasteful. See below for an example or go and check score_sentence.
     ///
-    /// Or take a look at https://github.com/kpu/kenlm/blob/master/python/score_sentence.cc
+    /// Or take a look at <https://github.com/kpu/kenlm/blob/master/python/score_sentence.cc>
+    /// ```
+    /// use kenlm_rs::Model;
+    /// let model = Model::new("test_data/test.bin", false).unwrap();
     ///
-    /// let mut mem1 = self.get_sentence_state();
-    /// let mut mem2 = self.get_sentence_state();
+    /// let mut mem1 = model.new_state();
+    /// let mut mem2 = model.new_state();
+    /// let bos = true;
     ///
     /// if bos {
-    ///     mem1 = self.begin_sentence_bos(mem1);
+    ///     model.fill_state_with_bos_context(&mut mem1);
     /// } else {
-    ///     mem1 = self.begin_sentence_null(mem1);
+    ///     model.fill_state_with_null_context(&mut mem1);
     /// }
     /// let mut score = 0f32;
-    /// for w in sentence {
-    ///     let out = self.score_word_given_state(&mut mem1, &mut mem2, w);
+    /// for w in &["what", "a", "lovely", "sentence"] {
+    ///     let out = model.score_word_given_state(&mut mem1, &mut mem2, w);
     ///     std::mem::swap(&mut mem1, &mut mem2);
     ///     score += out;
     /// }
+    /// eprintln!("{score:?}");
+    /// ```
     pub fn score_word_given_state(
         &self,
-        in_state: &mut StateWrapper,
-        out_state: &mut StateWrapper,
+        in_state: &mut State,
+        out_state: &mut State,
         word: &str,
     ) -> f32 {
         let vocab = self.inner.BaseVocabulary();
@@ -100,10 +111,22 @@ impl Model {
         self.score_index_given_state(in_state, out_state, WordIdx(index))
     }
 
+    /// Returns the conditional probability of `index` given `in_state` in log10-space
+    ///
+    /// Computes the conditional probability of the suffix `index` given the prefix `in_state`.
+    /// You may obtain a [WordIdx] by passing a &str to `get_word_idx_opt` or `get_word_idx`.
+    /// When repeatedly calling this function, you'll likely want to do something along the
+    /// lines of:
+    ///     
+    ///   let score = self.score_index_given_state(&mut mem1, &mut mem2, cur_word_index);
+    ///   std::mem::swap(&mut mem1, &mut mem2);
+    ///   let score = self.score_index_given_state(&mut mem1, &mut mem2, next_word_index);
+    ///
+    /// See the doc-string of `score_word_given_state` for more details.
     pub fn score_index_given_state(
         &self,
-        in_state: &mut StateWrapper,
-        out_state: &mut StateWrapper,
+        in_state: &mut State,
+        out_state: &mut State,
         index: WordIdx,
     ) -> f32 {
         let in_state = in_state.0.pin_mut();
@@ -118,6 +141,10 @@ impl Model {
         unsafe { self.inner.BaseScore(raw1, index.0, raw2) }
     }
 
+    /// Returns the joint probability of `sentence` in log10-space
+    ///
+    /// Computes the joint probability of the given sentence given this model. It returns the probability
+    /// in log10-space.
     pub fn score_sentence(&self, sentence: &[&str], bos: bool, eos: bool) -> f32 {
         let vocab = self.inner.BaseVocabulary();
 
@@ -146,22 +173,29 @@ impl Model {
         score
     }
 
-    pub fn new_state(&self) -> StateWrapper {
-        let mut state = StateWrapper::new_for_model(self);
+    /// Constructs a new StateWrapper
+    pub fn new_state(&self) -> State {
+        let mut state = State::new_for_model(self);
         // better safe than sorry i guess?
         self.fill_state_with_null_context(&mut state);
         state
     }
 
+    /// Get the string vocabulary
+    ///
+    /// This will only be Some if the model has a vocabulary and you passed `store_vocab` to the constructor.
     pub fn get_vocab(&self) -> Option<&[String]> {
         self.vocab.as_deref()
     }
 
+    /// Return the order of this ngram model
     pub fn get_order(&self) -> u8 {
         self.inner.Order()
     }
-
-    pub fn fill_state_with_bos_context(&self, state: &mut StateWrapper) {
+    /// Initializes `state` to the `<s>` (beginning of sentence) context
+    ///
+    /// Use this if you want to take the beginning of sentences into account.
+    pub fn fill_state_with_bos_context(&self, state: &mut State) {
         let in_state = state.0.pin_mut();
         let s = std::pin::Pin::<&mut bridge::lm::ngram::State>::into_inner(in_state);
         let ptr = s as *mut bridge::lm::ngram::State;
@@ -169,15 +203,27 @@ impl Model {
         unsafe { self.inner.BeginSentenceWrite(raw) }
     }
 
-    pub fn fill_state_with_null_context(&self, state: &mut StateWrapper) {
+    /// Initializes `state` to an empty context.
+    ///
+    /// Use this function if you want to score without `<s>` (beginning of sentence) or discard context
+    pub fn fill_state_with_null_context(&self, state: &mut State) {
         let in_state = state.0.pin_mut();
         let s = std::pin::Pin::<&mut bridge::lm::ngram::State>::into_inner(in_state);
         let ptr = s as *mut bridge::lm::ngram::State;
         let raw = ptr as *mut autocxx::c_void;
         unsafe { self.inner.NullContextWrite(raw) }
     }
+
+    fn state_size(&self) -> usize {
+        self.inner.StateSize()
+    }
 }
 
+/// Index into the vocabulary of a [Model]
+///
+/// [WordIdx] is a wrapper around the vocabulary index type [autocxx::c_uint].
+/// A [autocxx::c_uint] as a newtype wrapper around a [core::ffi::c_uint].
+/// It seems to be the case that this is almost always a [u32].
 #[derive(Debug, Clone, Copy)]
 pub struct WordIdx(c_uint);
 
@@ -189,23 +235,30 @@ impl Deref for WordIdx {
     }
 }
 
+/// The [State] is the prefix storage
+///
+/// [State] is a wrapper around the C++ pod-struct `lm::ngram::State`.
+/// It tracks the words in the prefix along backoff and currently active length.
 #[derive(Debug)]
-pub struct StateWrapper(UniquePtr<bridge::lm::ngram::State>);
+pub struct State(UniquePtr<bridge::lm::ngram::State>);
 
-impl StateWrapper {
+impl State {
     fn new_for_model(model: &Model) -> Self {
         let size = std::mem::size_of::<bridge::lm::ngram::State>();
         let model_size = model.state_size();
-        if size != model_size {
-            eprintln!("size of bridge::lm::ngram::State: {size} does not match size returned by StateSize: {model_size}");
-        }
+        assert_eq!(size, model_size, "size of bridge::lm::ngram::State: {size} does not match size returned by StateSize: {model_size}");
         let state = bridge::lm::ngram::State::new().within_unique_ptr();
         Self(state)
+    }
+
+    /// Fetches the words currently stored in this [State]
+    pub fn words(&self) -> Vec<WordIdx> {
+        self.0.words.iter().map(|c| WordIdx(*c)).collect::<Vec<_>>()
     }
 }
 
 /// Panics if Self::0 contains a null-pointer
-impl Clone for StateWrapper {
+impl Clone for State {
     fn clone(&self) -> Self {
         Self(self.0.as_ref().unwrap().clone().within_unique_ptr())
     }

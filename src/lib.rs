@@ -1,10 +1,12 @@
+#![doc = include_str!("../README.md")]
+
 mod cxx;
-pub(crate) mod headers;
+pub mod headers;
 pub(crate) mod model;
 
 pub use crate::cxx::LoadMethod;
 
-pub use model::{Model, StateWrapper, WordIdx};
+pub use model::{Model, State, WordIdx};
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {

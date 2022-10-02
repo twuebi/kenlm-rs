@@ -6,11 +6,11 @@ Loading ARPA files will likely not work as file-type recognition has not been im
 
 ## Maxorder
 
-Kenlm's build-flag `-DKENLM_MAX_ORDER` governs the maximal ngram order you'll be able to load with this library. Loading a model with larger order than the library was built with will cause a runtime exception originating in C++. `-DKENLM_MAX_ORDER` also governs the size of state, you may set it via the env var `KENLM_MAX_ORDER` or by changing the default value in [build.rs](build.rs). The current default is `3`. Increasing it comes at the cost of increased state-sizes.
+Kenlm's build-flag `-DKENLM_MAX_ORDER` governs the maximal ngram order you'll be able to load with this library. Loading a model with larger order than the library was built with will cause a runtime exception originating in C++. `-DKENLM_MAX_ORDER` also governs the size of state, you may set it via the env var `KENLM_MAX_ORDER` or by changing the default value in [build.rs](https://github.com/twuebi/kenlm-rs-autocxx/blob/main/build.rs). The current default is `3`. Increasing it comes at the cost of increased state-sizes.
 
 The a state is a plain-old-data struct with:
 
-```rust
+```rust,ignore
 [c_uint, KENLM_MAX_ORDER-1]
 [f32, KENLM_MAX_ORDER-1]
 u8
@@ -27,7 +27,31 @@ $ cargo run --example score_sentence -- --model-path carol.bin "the register of 
 
 ### Library
 
-Check out [examples/score_sentence.rs](examples/score_sentence.rs), [examples/inspect_vocab.rs](examples/inspect_vocab.rs) and `Model` in [src/model/mod.rs](src/model/mod.rs).
+```
+use kenlm_rs::Model;
+
+let model = Model::new("test_data/test.bin", false).unwrap();
+
+let mut mem1 = model.new_state();
+let mut mem2 = model.new_state();
+let bos = true;
+
+if bos {
+    model.fill_state_with_bos_context(&mut mem1);
+} else {
+    model.fill_state_with_null_context(&mut mem1);
+}
+let mut score = 0f32;
+for w in &["what", "a", "lovely", "sentence"] {
+    let out = model.score_word_given_state(&mut mem1, &mut mem2, w);
+    std::mem::swap(&mut mem1, &mut mem2);
+    score += out;
+}
+eprintln!("{score:?}");
+```
+
+
+Check out [examples/score_sentence.rs](https://github.com/twuebi/kenlm-rs-autocxx/blob/main/examples/score_sentence.rs), [examples/inspect_vocab.rs](https://github.com/twuebi/kenlm-rs-autocxx/blob/main/examples/inspect_vocab.rs) and `Model` in [src/model/mod.rs](https://github.com/twuebi/kenlm-rs-autocxx/blob/main/src/model/mod.rs#L19).
 
 -----------------------------
 
@@ -37,7 +61,7 @@ Besides formatting, a few functions were added, mostly to provide easier access 
 
 ### config.cc
 
-In [src/lm/config.cc](src/cxx/lm/config.cc), there are 3 added functions. 
+In [src/cxx/lm/config.cc](https://github.com/twuebi/kenlm-rs-autocxx/blob/main/src/cxx/lm/config.cc), there are 3 added functions. 
 
 ```c++
 namespace lm
@@ -52,9 +76,9 @@ namespace lm
 ```
 - `Config_Create` is a constructor
 - `Config_set_load_method` sets the load_method 
-- `Config_set_enumerate_callback` sets the enumerate callback that gets executed for each vocab entry, see `VocabCallback` in [src/bridge.rs](src/cxx/bridge.rs) for an example callback.
+- `Config_set_enumerate_callback` sets the enumerate callback that gets executed for each vocab entry, see `VocabCallback` in [src/cxx/bridge.rs](https://github.com/twuebi/kenlm-rs-autocxx/blob/main/src/cxx/bridge.rs) for an example callback.
 
 
 ### virtual_interface.cc
 
-In [src/lm/virtual_interface.cc](src/cxx/lm/virtual_interface.cc) there is a single added function `LoadVirtualPtr`, it is essentially `LoadVirtual` but returns a unique pointer.
+In [src/cxx/lm/virtual_interface.cc](https://github.com/twuebi/kenlm-rs-autocxx/blob/main/src/cxx/lm/virtual_interface.cc) there is a single added function `LoadVirtualPtr`, it is essentially `LoadVirtual` but returns a unique pointer.

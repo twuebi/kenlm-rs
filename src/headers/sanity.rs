@@ -4,9 +4,14 @@ use zerocopy::FromBytes;
 
 use crate::{cxx::bridge::size_of_sanity_header, Error};
 
+/// KenLM Model Sanity check
+///
+/// This struct is stored in bytes 0-88 in binary KenLM models. As its name says, it's used
+/// for sanity-checks. We implement it in rust-land to perform the validation here so that
+/// we can avoid violent crashes upon C++ runtime exceptions.
 #[repr(C)]
 #[derive(Debug, PartialEq, FromBytes)]
-pub struct SanityHeader {
+pub(crate) struct SanityHeader {
     magic: [u8; SanityHeader::PADDED_MAGIC_SIZE],
     float_zero: f32,
     float_one: f32,
