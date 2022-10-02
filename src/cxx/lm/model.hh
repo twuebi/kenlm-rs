@@ -162,11 +162,6 @@ namespace lm
      * use the virtual base class if you can avoid it.  Instead, use the above
      * classes as template arguments to your own virtual feature function.*/
     base::Model *LoadVirtual(const char *file_name, const Config &config = Config(), ModelType if_arpa = PROBING);
-    ::std::unique_ptr<base::Model> LoadVirtualPtr(const char *file_name, const Config &config);
-
-    // std::unique_ptr<base::Model> LoadVirtualPtr(const char *file_name, const Config &config = Config(), ModelType if_arpa = PROBING);
-
-    ::std::unique_ptr<::lm::ngram::TrieModel> LoadSome(const ::std::string &file_name, const Config &config);
   } // namespace ngram
 } // namespace lm
 #endif // LM_MODEL_H

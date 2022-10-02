@@ -2,6 +2,7 @@
 
 This crate is an experimental Rust wrapper around the [kenlm C++ library](https://github.com/kpu/kenlm/). It uses [autocxx](https://google.github.io/autocxx/) to generate the glue-code. It uses a modified version of kenlm located in `src/lm` and `src/util`. Most of the modifications add constructor functions or expose config fields.
 
+Loading ARPA files will likely not work as file-type recognition has not been implemented and constructing a model will try to deserialize the headers of the binary format to perform validation before calling to C++ to do the actual loading. This decision was taken to avoid ugly SIGABRT that would occur if the C++ throws exceptions which are currently [unsupported](https://google.github.io/autocxx/other_features.html?highlight=exception#exceptions) in `autocxx` 
 
 ## Maxorder
 
@@ -25,13 +26,13 @@ cargo run --example score_sentence -- --model-path your_model.bin "Some test sen
 
 ### Library
 
-See [examples/score_sentence.rs](examples/score_sentence.rs) and [src/lib.rs](src/lib.rs).
+See [examples/score_sentence.rs](examples/score_sentence.rs) and `Model` in [src/model/mod.rs](src/model/mod.rs).
 
 -----------------------------
 
 ## Modifications to kenlm
 
-Besides formatting, a few functions were added in `model.cc` and `config.cc`.
+Besides formatting, a few functions were added, mostly to provide easier access from Rust or to help autocxx. An incomplete list can be found below:
 
 ### config.cc
 
@@ -53,6 +54,6 @@ namespace lm
 - `Config_set_enumerate_callback` sets the enumerate callback that gets executed for each vocab entry, see `VocabCallback` in [src/bridge.rs](src/bridge.rs) for an example callback.
 
 
-### model.cc
+### virtual_interface.cc
 
-In [src/lm/model.cc](src/lm/model.cc) there is a single added function `LoadVirtualPtr`, it is essentially `LoadVirtual` but returns a unique pointer.
+In [src/lm/virtual_interface.cc](src/lm/virtual_interface.cc) there is a single added function `LoadVirtualPtr`, it is essentially `LoadVirtual` but returns a unique pointer.

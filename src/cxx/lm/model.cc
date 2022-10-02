@@ -425,29 +425,5 @@ namespace lm
         UTIL_THROW(FormatLoadException, "Confused by model type " << model_type);
       }
     }
-
-    ::std::unique_ptr<base::Model> LoadVirtualPtr(const char *file_name, const Config &config)
-    {
-      ModelType model_type = ModelType::PROBING;
-      RecognizeBinary(file_name, model_type);
-      switch (model_type)
-      {
-      case PROBING:
-        return ::std::make_unique<::lm::ngram::ProbingModel>(file_name, config);
-      case REST_PROBING:
-        return ::std::make_unique<::lm::ngram::RestProbingModel>(file_name, config);
-      case TRIE:
-        return ::std::make_unique<::lm::ngram::TrieModel>(file_name, config);
-      case QUANT_TRIE:
-        return ::std::make_unique<::lm::ngram::QuantTrieModel>(file_name, config);
-      case ARRAY_TRIE:
-        return ::std::make_unique<::lm::ngram::ArrayTrieModel>(file_name, config);
-      case QUANT_ARRAY_TRIE:
-        return ::std::make_unique<::lm::ngram::QuantArrayTrieModel>(file_name, config);
-      default:
-        UTIL_THROW(FormatLoadException, "Confused by model type " << model_type);
-      }
-    }
-
   } // namespace ngram
 } // namespace lm

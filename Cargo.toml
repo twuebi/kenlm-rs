@@ -9,6 +9,7 @@ publish = false
 cxx = "1.0.78"
 autocxx = { version = "0.22.4" }
 thiserror = {version = "1.0.37" }
+zerocopy = { version = "0.6.1" }
 
 [build-dependencies]
 autocxx-build = { version = "0.22.4" }
@@ -17,3 +18,4 @@ anyhow = { version = "1.0.65" }
 [dev-dependencies]
 clap = { version = "4.0.7", features=["derive"] }
 anyhow = { version = "1.0.65" }
+approx = { version = "0.5.1" }

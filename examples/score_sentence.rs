@@ -27,10 +27,10 @@ fn main() -> anyhow::Result<(), anyhow::Error> {
             .to_str()
             .ok_or(anyhow::anyhow!("Path could not be converted into &str"))?,
         true,
-    );
+    )?;
 
     // We constructed with_vocab: true
-    let vocab_ref = model.vocab.as_deref().unwrap();
+    let vocab_ref = model.get_vocab().unwrap();
     eprintln!(
         "The vocab has {} elements. The first element is: {:?}, the tenth: {:?} and the last: {:?}",
         vocab_ref.len(),

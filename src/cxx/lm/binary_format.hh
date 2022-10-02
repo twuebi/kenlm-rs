@@ -44,6 +44,10 @@ struct Parameters {
   std::vector<uint64_t> counts;
 };
 
+
+unsigned long SizeOfSanity();
+unsigned char ModelMaxOrder();
+
 class BinaryFormat {
   public:
     explicit BinaryFormat(const Config &config);
