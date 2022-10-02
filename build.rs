@@ -3,7 +3,7 @@ pub const DEFAULT_ORDER: &str = "3";
 fn main() -> anyhow::Result<()> {
     println!("cargo:rerun-if-changed=src/cxx/bridge.rs");
     println!("cargo:rerun-if-changed=build.rs");
-    // println!("cargo:rerun-if-env-changed=KENLM_MAX_ORDER");
+    println!("cargo:rerun-if-env-changed=KENLM_MAX_ORDER");
     let max_order = std::env::var("KENLM_MAX_ORDER").unwrap_or_else(|_| {
         eprintln!("cargo:warning=No max-order provided, defaulting to {DEFAULT_ORDER}");
         DEFAULT_ORDER.into()
