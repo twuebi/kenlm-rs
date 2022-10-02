@@ -27,7 +27,7 @@ impl FixedParameterHeader {
     }
 
     #[allow(dead_code)]
-    pub(crate) fn from_file_manually_parsed(fd: &mut std::fs::File) -> Result<Self, Error> {
+    fn from_file_manually_parsed(fd: &mut std::fs::File) -> Result<Self, Error> {
         let mut buf = vec![0u8; bridge::get_size_of_fixed_width_params()];
         fd.read(&mut buf)?;
         let order = buf[0];
@@ -49,5 +49,27 @@ impl FixedParameterHeader {
             has_vocabulary: has_vocabulary as u8,
             search_version,
         })
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::FixedParameterHeader;
+
+    #[test]
+    fn test_loads_expected() {
+        let mut fd = std::fs::File::open("test_data/fixed_params.bin").unwrap();
+        let from_bytes = FixedParameterHeader::from_file(&mut fd).unwrap();
+        let mut fd = std::fs::File::open("test_data/fixed_params.bin").unwrap();
+        let manually = FixedParameterHeader::from_file_manually_parsed(&mut fd).unwrap();
+        let expected = FixedParameterHeader {
+            order: 3,
+            probing_multiplier: 1.5,
+            model_type: 2,
+            has_vocabulary: 1,
+            search_version: 1,
+        };
+        assert_eq!(from_bytes, manually);
+        assert_eq!(expected, manually);
     }
 }

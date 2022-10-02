@@ -54,3 +54,29 @@ impl SanityHeader {
         SanityHeader::read_from(header_bytes.as_slice()).ok_or(Error::SanityFormatError)
     }
 }
+
+#[cfg(test)]
+mod test {
+    use super::SanityHeader;
+    #[test]
+    fn test_reference_expected() {
+        let expected = SanityHeader {
+            magic: *b"mmap lm http://kheafield.com/code format version 5\n\0\0\0\0\0",
+            float_zero: 0f32,
+            float_one: 1f32,
+            float_minus_half: -0.5f32,
+            word_idx_one: 1,
+            word_idx_max: u32::MAX,
+            usize_sanity: 1,
+        };
+        assert_eq!(SanityHeader::REFERENCE, expected);
+    }
+
+    #[test]
+    fn test_loads_expected() {
+        let mut fd = std::fs::File::open("test_data/sanity.bin").unwrap();
+        let from_bytes = SanityHeader::from_file(&mut fd).unwrap();
+        let expected = SanityHeader::REFERENCE;
+        assert_eq!(from_bytes, expected);
+    }
+}
