@@ -71,7 +71,6 @@ impl Config {
         }
         None
     }
-
 }
 
 #[derive(Debug)]

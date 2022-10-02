@@ -241,6 +241,16 @@ mod test {
     }
 
     #[test]
+    fn loads_probing_model() {
+        let _model = Model::new("test_data/carol_probing_bigram.bin", false).expect("should exist");
+    }
+
+    #[test]
+    fn loads_trie_model() {
+        let _model = Model::new("test_data/carol_probing_bigram.bin", false).expect("should exist");
+    }
+
+    #[test]
     fn does_not_load() {
         let model = Model::new("no-file-to-be-found", false);
         match model {
