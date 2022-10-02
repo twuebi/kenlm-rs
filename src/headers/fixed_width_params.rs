@@ -1,5 +1,6 @@
-use std::io::Read;
+use std::io::{Read, Seek, SeekFrom};
 
+use byteorder::{LittleEndian, ReadBytesExt};
 use zerocopy::{AsBytes, FromBytes};
 
 use crate::cxx::bridge;
@@ -7,7 +8,7 @@ use crate::Error;
 
 /// KenLM Model Header
 ///
-/// This struct is stored in bytes 89-176 in binary KenLM models. It stores general
+/// This struct is stored in bytes 88-108 in binary KenLM models. It stores general
 /// information about the model. It is implemented here since we have to perform some
 /// validation of the model & load-configuration before dispatching to C++ to avoid
 /// violent crashes upon C++ runtime exceptions.
@@ -46,19 +47,15 @@ impl FixedParameterHeader {
 
     #[allow(dead_code)]
     fn from_file_manually_parsed(fd: &mut std::fs::File) -> Result<Self, Error> {
-        let mut buf = vec![0u8; bridge::get_size_of_fixed_width_params()];
-        fd.read(&mut buf)?;
-        let order = buf[0];
-        // Padding: buf[1], buf[2], buf[3]
-        // Probing multiplier: buf[4], buf[5], buf[6], buf[7]
-        let probing_multiplier = f32::from_le_bytes([buf[4], buf[5], buf[6], buf[7]]);
-        // Model type: buf[8], buf[9], buf[10], buf[11]
-        let model_type = u32::from_le_bytes([buf[8], buf[9], buf[10], buf[11]]);
-        // has_vocabulary
-        let has_vocabulary = buf[12] != 0;
-        // Padding buf[13], buf[14], buf[15]
-        let search_version = buf[16] as u32;
-        // Padding buf[17], buf[18], buf[19]
+        let order = fd.read_u8()?;
+        fd.seek(SeekFrom::Current(3))?; // skip padding
+        let probing_multiplier = fd.read_f32::<LittleEndian>()?;
+        let model_type = fd.read_u32::<LittleEndian>()?;
+
+        let has_vocabulary = fd.read_u8()? != 0;
+        fd.seek(SeekFrom::Current(3))?; // skip padding
+
+        let search_version = fd.read_u32::<LittleEndian>()?;
 
         Ok(FixedParameterHeader {
             order,

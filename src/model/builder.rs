@@ -1,4 +1,4 @@
-use crate::headers::{FixedParameterHeader, SanityHeader};
+use crate::headers::{CountHeader, FixedParameterHeader, SanityHeader};
 use crate::{headers, Error};
 
 use crate::cxx::bridge::get_max_order;
@@ -60,7 +60,7 @@ impl ModelBuilder {
         self.verify_sanity(sanity_header)?;
         let fixed_params = headers::FixedParameterHeader::from_file(&mut fd)?;
         self.verify(&fixed_params)?;
-
+        let counts = CountHeader::from_file(&mut fd, &fixed_params)?;
         let mut config = crate::cxx::Config::default();
         let inner = {
             config.set_load_method(crate::cxx::LoadMethod::Lazy)?;
@@ -76,6 +76,7 @@ impl ModelBuilder {
             inner,
             vocab: config.get_vocab(),
             fixed_parameters: fixed_params,
+            count_header: counts,
         })
     }
 }

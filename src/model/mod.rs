@@ -2,7 +2,7 @@ mod builder;
 
 use std::ops::Deref;
 
-use crate::headers::FixedParameterHeader;
+use crate::headers::{CountHeader, FixedParameterHeader};
 use crate::Error;
 use autocxx::prelude::*;
 
@@ -18,6 +18,7 @@ use self::builder::ModelBuilder;
 pub struct Model {
     inner: CxxModel,
     fixed_parameters: FixedParameterHeader,
+    count_header: CountHeader,
     vocab: Option<Vec<String>>,
 }
 
@@ -46,6 +47,14 @@ impl Model {
     /// of the currently loaded kenlm model.
     pub fn get_fixed_parameter_header(&self) -> &FixedParameterHeader {
         &self.fixed_parameters
+    }
+
+    /// Get the number of ngrams per order
+    ///
+    /// [CountHeader] stores how many unique ngrams exist per order of the model. I.e. for a
+    /// trigram model, how many tri, bi and unigrams.
+    pub fn get_count_header(&self) -> &CountHeader {
+        &self.count_header
     }
 
     /// Get the index of a word in the language model

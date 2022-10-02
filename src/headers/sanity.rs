@@ -4,6 +4,8 @@ use zerocopy::FromBytes;
 
 use crate::{cxx::bridge::size_of_sanity_header, Error};
 
+use super::align8;
+
 /// KenLM Model Sanity check
 ///
 /// This struct is stored in bytes 0-88 in binary KenLM models. As its name says, it's used
@@ -19,11 +21,6 @@ pub(crate) struct SanityHeader {
     word_idx_one: u32,
     word_idx_max: u32,
     usize_sanity: u64,
-}
-
-const fn align8(size: usize) -> usize {
-    let size = size as isize;
-    (((((size) - 1) / 8) + 1) * 8) as usize
 }
 
 type MAGIC = [u8; 52];
