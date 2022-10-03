@@ -74,7 +74,7 @@ impl Config {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub enum LoadMethod {
     Lazy,
     PopulateOrRead,
