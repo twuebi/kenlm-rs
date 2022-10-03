@@ -8,7 +8,7 @@ use super::FixedParameters;
 ///
 /// This struct is stored in binary KenLM models following byte 108. It stores the number
 /// of ngrams per ngram length.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Counts {
     /// Order of the NGram model
     pub counts: Vec<usize>,
