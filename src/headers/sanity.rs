@@ -21,6 +21,7 @@ pub(crate) struct Sanity {
     float_minus_half: f32,
     word_idx_one: u32,
     word_idx_max: u32,
+    word_idx_zero: u32,
     usize_sanity: u64,
 }
 
@@ -35,6 +36,7 @@ impl Sanity {
         float_zero: 0f32,
         float_one: 1f32,
         float_minus_half: -0.5f32,
+        word_idx_zero: 0,
         word_idx_one: 1u32,
         word_idx_max: u32::MAX,
         usize_sanity: 1,
@@ -58,6 +60,7 @@ mod test {
             float_zero: 0f32,
             float_one: 1f32,
             float_minus_half: -0.5f32,
+            word_idx_zero: 0,
             word_idx_one: 1,
             word_idx_max: u32::MAX,
             usize_sanity: 1,

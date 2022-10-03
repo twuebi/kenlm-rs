@@ -94,8 +94,8 @@ mod test {
 #[cfg(test)]
 fn total_header_size(order: usize) -> usize {
     align8(
-        dbg!(std::mem::size_of::<FixedParameters>())
-            + dbg!(std::mem::size_of::<Sanity>())
+        std::mem::size_of::<FixedParameters>()
+            + std::mem::size_of::<Sanity>()
             + order * std::mem::size_of::<u64>(),
     )
 }
