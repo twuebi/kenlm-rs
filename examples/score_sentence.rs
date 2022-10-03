@@ -27,7 +27,7 @@ fn main() -> anyhow::Result<(), anyhow::Error> {
     let model = kenlm_rs::Model::new(
         model_path
             .to_str()
-            .ok_or(anyhow::anyhow!("Path could not be converted into &str"))?,
+            .ok_or_else(|| anyhow::anyhow!("Path could not be converted into &str"))?,
         true,
     )?;
 

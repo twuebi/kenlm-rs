@@ -400,7 +400,7 @@ mod test {
         let model = Model::new("test_data/test.bin", true).expect("should exist");
         let mut in_state = model.new_state();
         let mut out_state = model.new_state();
-        let score = model.score_word_given_state(&mut in_state, &mut out_state, &"some");
+        let score = model.score_word_given_state(&mut in_state, &mut out_state, "some");
         approx::assert_abs_diff_eq!(-1.3708712f32, score, epsilon = f32::EPSILON);
     }
 
