@@ -4,6 +4,7 @@ mod cxx;
 pub mod headers;
 pub(crate) mod model;
 pub mod reader;
+pub mod vocab;
 
 pub use crate::cxx::LoadMethod;
 

@@ -7,6 +7,7 @@ use std::{
 use crate::headers::Counts;
 
 use super::{NGram, ProbBackoff, ProbBackoffNgram, ProbNgram};
+mod exp;
 #[cfg(test)]
 mod test;
 
