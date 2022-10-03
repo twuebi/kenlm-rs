@@ -3,20 +3,23 @@ name = "kenlm-rs"
 version = "0.1.0"
 edition = "2021"
 publish = false
+license = "LGPL 2.1" # TODO: KenLM is LGPL, so this has to be too?
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+
 cxx = "1.0.78"
 autocxx = { version = "0.22.4" }
-thiserror = {version = "1.0.37" }
+thiserror = { version = "1.0.37" }
 zerocopy = { version = "0.6.1" }
 byteorder = { version = "1.4.3" }
+itertools = { version = "0.10.5" }
 
 [build-dependencies]
 autocxx-build = { version = "0.22.4" }
 anyhow = { version = "1.0.65" }
 
 [dev-dependencies]
-clap = { version = "4.0.7", features=["derive"] }
+clap = { version = "4.0.7", features = ["derive"] }
 anyhow = { version = "1.0.65" }
 approx = { version = "0.5.1" }
