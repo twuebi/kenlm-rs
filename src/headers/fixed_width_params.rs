@@ -1,6 +1,5 @@
-use std::io::{Read, Seek, SeekFrom};
+use std::io::Read;
 
-use byteorder::{LittleEndian, ReadBytesExt};
 use zerocopy::{AsBytes, FromBytes};
 
 use crate::cxx::bridge;
@@ -8,13 +7,13 @@ use crate::Error;
 
 /// KenLM Model Header
 ///
-/// This struct is stored in bytes 88-108 in binary KenLM models. It stores general
+/// `FixedParameters` is stored in bytes 88-108 in binary KenLM models. It stores general
 /// information about the model. It is implemented here since we have to perform some
 /// validation of the model & load-configuration before dispatching to C++ to avoid
 /// violent crashes upon C++ runtime exceptions.
 #[repr(C)]
 #[derive(Copy, Clone, Debug, PartialEq, FromBytes)]
-pub struct FixedParameterHeader {
+pub struct FixedParameters {
     /// Order of the NGram model
     pub order: u8,
     /// Probing multiplier for the probing storage model
@@ -34,19 +33,22 @@ pub struct FixedParameterHeader {
     pub search_version: u32,
 }
 
-impl FixedParameterHeader {
+impl FixedParameters {
     pub(crate) fn from_file(fd: &mut std::fs::File) -> Result<Self, Error> {
         let mut buf = vec![0u8; bridge::get_size_of_fixed_width_params()];
-        fd.read(&mut buf)?;
-        FixedParameterHeader::read_from(buf.as_bytes()).ok_or(Error::ParamHeaderFormatError)
+        fd.read_exact(&mut buf)?;
+        FixedParameters::read_from(buf.as_bytes()).ok_or(Error::ParamHeaderFormatError)
     }
 
     pub fn has_vocabulary(&self) -> bool {
         self.has_vocabulary != 0
     }
 
-    #[allow(dead_code)]
+    #[cfg(test)]
     fn from_file_manually_parsed(fd: &mut std::fs::File) -> Result<Self, Error> {
+        use std::io::{Seek, SeekFrom};
+
+        use byteorder::{LittleEndian, ReadBytesExt};
         let order = fd.read_u8()?;
         fd.seek(SeekFrom::Current(3))?; // skip padding
         let probing_multiplier = fd.read_f32::<LittleEndian>()?;
@@ -57,7 +59,7 @@ impl FixedParameterHeader {
 
         let search_version = fd.read_u32::<LittleEndian>()?;
 
-        Ok(FixedParameterHeader {
+        Ok(FixedParameters {
             order,
             probing_multiplier,
             model_type,
@@ -69,15 +71,15 @@ impl FixedParameterHeader {
 
 #[cfg(test)]
 mod test {
-    use super::FixedParameterHeader;
+    use super::FixedParameters;
 
     #[test]
     fn test_loads_expected() {
         let mut fd = std::fs::File::open("test_data/fixed_params.bin").unwrap();
-        let from_bytes = FixedParameterHeader::from_file(&mut fd).unwrap();
+        let from_bytes = FixedParameters::from_file(&mut fd).unwrap();
         let mut fd = std::fs::File::open("test_data/fixed_params.bin").unwrap();
-        let manually = FixedParameterHeader::from_file_manually_parsed(&mut fd).unwrap();
-        let expected = FixedParameterHeader {
+        let manually = FixedParameters::from_file_manually_parsed(&mut fd).unwrap();
+        let expected = FixedParameters {
             order: 3,
             probing_multiplier: 1.5,
             model_type: 2,

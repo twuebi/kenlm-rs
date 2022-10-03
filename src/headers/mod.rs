@@ -1,17 +1,19 @@
 mod counts;
 pub(crate) mod fixed_width_params;
 pub(crate) mod sanity;
-pub use counts::CountHeader;
-pub use fixed_width_params::FixedParameterHeader;
-pub(crate) use sanity::SanityHeader;
+pub use counts::Counts;
+pub use fixed_width_params::FixedParameters;
+pub(crate) use sanity::Sanity;
 
 #[cfg(test)]
 mod test {
-    use crate::headers::{counts::CountHeader, FixedParameterHeader};
+    use crate::headers::{counts::Counts, FixedParameters};
+
+    use super::total_header_size;
 
     #[test]
     fn loads_all() {
-        let expected_fixed = FixedParameterHeader {
+        let expected_fixed = FixedParameters {
             order: 3,
             probing_multiplier: 1.5,
             model_type: 2,
@@ -20,14 +22,14 @@ mod test {
         };
 
         let mut fd = std::fs::File::open("test_data/sanity_fixed_and_counts.bin").unwrap();
-        let sanity = super::SanityHeader::from_file(&mut fd).unwrap();
-        assert_eq!(sanity, super::SanityHeader::REFERENCE);
-        let fixed = FixedParameterHeader::from_file(&mut fd).unwrap();
+        let sanity = super::Sanity::from_file(&mut fd).unwrap();
+        assert_eq!(sanity, super::Sanity::REFERENCE);
+        let fixed = FixedParameters::from_file(&mut fd).unwrap();
         assert_eq!(fixed, expected_fixed);
-        let counts = CountHeader::from_file(&mut fd, &fixed).unwrap();
+        let counts = Counts::from_file(&mut fd, &fixed).unwrap();
         assert_eq!(
             counts,
-            CountHeader {
+            Counts {
                 //.. why??
                 counts: vec![24, 24, 24]
             }
@@ -36,7 +38,7 @@ mod test {
 
     #[test]
     fn loads_from_full_model_file() {
-        let expected_fixed = FixedParameterHeader {
+        let expected_fixed = FixedParameters {
             order: 3,
             probing_multiplier: 1.5,
             model_type: 2,
@@ -45,14 +47,14 @@ mod test {
         };
 
         let mut fd = std::fs::File::open("test_data/carol.bin").unwrap();
-        let sanity = super::SanityHeader::from_file(&mut fd).unwrap();
-        assert_eq!(sanity, super::SanityHeader::REFERENCE);
-        let fixed = FixedParameterHeader::from_file(&mut fd).unwrap();
+        let sanity = super::Sanity::from_file(&mut fd).unwrap();
+        assert_eq!(sanity, super::Sanity::REFERENCE);
+        let fixed = FixedParameters::from_file(&mut fd).unwrap();
         assert_eq!(fixed, expected_fixed);
-        let counts = CountHeader::from_file(&mut fd, &fixed).unwrap();
+        let counts = Counts::from_file(&mut fd, &fixed).unwrap();
         assert_eq!(
             counts,
-            CountHeader {
+            Counts {
                 counts: vec![4415, 18349, 25612]
             }
         );
@@ -60,7 +62,7 @@ mod test {
 
     #[test]
     fn loads_from_other_full_model_file() {
-        let expected_fixed = FixedParameterHeader {
+        let expected_fixed = FixedParameters {
             order: 2,
             probing_multiplier: 1.5,
             model_type: 0,
@@ -69,25 +71,31 @@ mod test {
         };
 
         let mut fd = std::fs::File::open("test_data/carol_probing_bigram.bin").unwrap();
-        let sanity = super::SanityHeader::from_file(&mut fd).unwrap();
-        assert_eq!(sanity, super::SanityHeader::REFERENCE);
-        let fixed = FixedParameterHeader::from_file(&mut fd).unwrap();
+        let sanity = super::Sanity::from_file(&mut fd).unwrap();
+        assert_eq!(sanity, super::Sanity::REFERENCE);
+        let fixed = FixedParameters::from_file(&mut fd).unwrap();
         assert_eq!(fixed, expected_fixed);
-        let counts = CountHeader::from_file(&mut fd, &fixed).unwrap();
+        let counts = Counts::from_file(&mut fd, &fixed).unwrap();
         assert_eq!(
             counts,
-            CountHeader {
+            Counts {
                 counts: vec![4415, 18349]
             }
         );
     }
+
+    #[test]
+    fn test_total_header_size() {
+        assert_eq!(total_header_size(6), 160);
+        assert_eq!(total_header_size(2), 128);
+    }
 }
 
-#[allow(dead_code)]
+#[cfg(test)]
 fn total_header_size(order: usize) -> usize {
     align8(
-        dbg!(std::mem::size_of::<FixedParameterHeader>())
-            + dbg!(std::mem::size_of::<SanityHeader>())
+        dbg!(std::mem::size_of::<FixedParameters>())
+            + dbg!(std::mem::size_of::<Sanity>())
             + order * std::mem::size_of::<u64>(),
     )
 }

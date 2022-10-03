@@ -57,6 +57,7 @@ impl Config {
         let mut callback_ref = callback.borrow_mut();
         let callback_pin_mut = callback_ref.pin_mut();
         bridge::lm::ngram::Config_set_enumerate_callback(
+            // There should always be a config here given that Default creates one.
             self.inner.as_mut().unwrap(),
             callback_pin_mut,
         );

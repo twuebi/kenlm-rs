@@ -2,8 +2,8 @@ mod builder;
 
 use std::ops::Deref;
 
-use crate::headers::{CountHeader, FixedParameterHeader};
-use crate::Error;
+use crate::headers::{Counts, FixedParameters};
+use crate::{Error, LoadMethod};
 use autocxx::prelude::*;
 
 use crate::cxx::{bridge, CxxModel};
@@ -12,13 +12,13 @@ use self::builder::ModelBuilder;
 
 /// KenLM NGram model
 ///
-/// This [Model] holds the C++ wrapper of the KenLM model and some information extracted from its
+/// `Model` holds the C++ wrapper of the KenLM model and some information extracted from its
 /// headers which is accessible in [FixedParameterHeader]. Depending on model type and constructor
 /// parameters, it also stores the vocab as a [Vec<String>].
 pub struct Model {
     inner: CxxModel,
-    fixed_parameters: FixedParameterHeader,
-    count_header: CountHeader,
+    fixed_parameters: FixedParameters,
+    count_header: Counts,
     vocab: Option<Vec<String>>,
 }
 
@@ -41,11 +41,34 @@ impl Model {
             .build()
     }
 
+    /// Initializes the model with load_method, may store vocab
+    ///
+    /// Initializes the model from `file_name`, initialization happens in C++ land. Setting
+    /// `store_vocab` adds a callback to the model config object which copies the vocab into
+    /// this Rust-land struct. A vocab can only be stored if the supplied model has one, hence
+    /// this constructor will return an error if the [FixedParameterHeader] of `file_name`
+    /// contains `has_vocabulary=false` and you supply `store_vocab=true`.
+    ///
+    /// For some models, loading a vocab may lead to duplication in memory, in others, e.g.
+    /// trie-format, this may lead to increased memory usage, dependent on the model size this
+    /// can use quite a lot of memory.
+    /// If you run out of memory or don't need the vocab, consider not storing the vocab here.
+    pub fn new_with_load_method(
+        file_name: &str,
+        store_vocab: bool,
+        load_method: LoadMethod,
+    ) -> Result<Self, Error> {
+        ModelBuilder::new(file_name)
+            .store_vocab(store_vocab)
+            .with_load_method(load_method)
+            .build()
+    }
+
     /// Get some information about the currently loaded model
     ///
     /// [FixedParameterHeader] holds information about the order, formats and some internals
     /// of the currently loaded kenlm model.
-    pub fn get_fixed_parameter_header(&self) -> &FixedParameterHeader {
+    pub fn get_fixed_parameter_header(&self) -> &FixedParameters {
         &self.fixed_parameters
     }
 
@@ -53,7 +76,7 @@ impl Model {
     ///
     /// [CountHeader] stores how many unique ngrams exist per order of the model. I.e. for a
     /// trigram model, how many tri, bi and unigrams.
-    pub fn get_count_header(&self) -> &CountHeader {
+    pub fn get_count_header(&self) -> &Counts {
         &self.count_header
     }
 
@@ -64,6 +87,7 @@ impl Model {
         let vocab = self.inner.BaseVocabulary();
         cxx::let_cxx_string!(input = &word);
         let idx = vocab.Index1(&input);
+        //vocab.NotFound() is the unknown word index in the c++ vocab
         if idx == vocab.NotFound() {
             return None;
         }
@@ -230,7 +254,7 @@ impl Model {
 
 /// Index into the vocabulary of a [Model]
 ///
-/// [WordIdx] is a wrapper around the vocabulary index type [autocxx::c_uint].
+/// `WordIdx` is a wrapper around the vocabulary index type [autocxx::c_uint].
 /// A [autocxx::c_uint] as a newtype wrapper around a [core::ffi::c_uint].
 /// It seems to be the case that this is almost always a [u32].
 #[derive(Debug, Clone, Copy)]
@@ -244,9 +268,9 @@ impl Deref for WordIdx {
     }
 }
 
-/// The [State] is the prefix storage
+/// The `State` is the prefix storage
 ///
-/// [State] is a wrapper around the C++ pod-struct `lm::ngram::State`.
+/// `State` is a wrapper around the C++ pod-struct `lm::ngram::State`.
 /// It tracks the words in the prefix along backoff and currently active length.
 #[derive(Debug)]
 pub struct State(UniquePtr<bridge::lm::ngram::State>);
