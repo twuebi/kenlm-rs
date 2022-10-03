@@ -2,7 +2,9 @@
 
 This crate is an experimental Rust wrapper around the [kenlm C++ library](https://github.com/kpu/kenlm/). It uses [autocxx](https://google.github.io/autocxx/) to generate the glue-code. It uses a modified version of kenlm located in `src/cxx/lm` and `src/cxx/util`. Most of the modifications add constructor functions or expose config fields.
 
-Loading ARPA files will likely not work as file-type recognition has not been implemented and constructing a model will try to deserialize the headers of the binary format to perform validation before calling to C++ to do the actual loading. This decision was taken to avoid ugly SIGABRT that would occur if the C++ throws exceptions which are currently [unsupported](https://google.github.io/autocxx/other_features.html?highlight=exception#exceptions) in `autocxx` 
+Both binary and arpa files are supported. Although you may want to avoid loading `.arpa` files, KenLM will scream at you from C++.
+
+There is also a initial support for reading files within rust in `src/reader/arpa.rs`.
 
 ## Maxorder
 

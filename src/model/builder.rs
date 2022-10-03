@@ -1,5 +1,7 @@
+use std::io::{BufRead, BufReader, Seek, SeekFrom};
+
 use crate::headers::{Counts, FixedParameters, Sanity};
-use crate::{headers, Error, LoadMethod};
+use crate::{headers, reader, Error, LoadMethod};
 
 use crate::cxx::bridge::get_max_order;
 
@@ -55,30 +57,50 @@ impl ModelBuilder {
         Ok(())
     }
 
+    pub(crate) fn verify_arpa(&self, counts: &Counts) -> Result<(), Error> {
+        if (get_max_order() as usize) < counts.counts.len() {
+            return Err(Error::IncompatibleMaxOrder {
+                max_order: get_max_order().into(),
+                model_order: counts.counts.len(),
+            });
+        }
+        Ok(())
+    }
+
     pub(crate) fn build(self) -> Result<Model, Error> {
         let mut fd = std::fs::File::open(&self.file_name)
             .map_err(|_| Error::FileNotFound(self.file_name.to_string()))?;
-
-        let sanity_header = Sanity::from_file(&mut fd)?;
-        self.verify_sanity(sanity_header)?;
-        let fixed_params = headers::FixedParameters::from_file(&mut fd)?;
-        self.verify(&fixed_params)?;
-        let counts = Counts::from_file(&mut fd, &fixed_params)?;
+        let buf_read = BufReader::new(&mut fd);
         let mut config = crate::cxx::Config::default();
-        let inner = {
-            config.set_load_method(self.load_method)?;
-
-            if self.vocab {
-                config.add_vocab_fetch_callback();
-            };
-            crate::cxx::CxxModel::load_from_file_with_config(&self.file_name, &config)
+        config.set_load_method(self.load_method)?;
+        if self.vocab {
+            config.add_vocab_fetch_callback();
         };
 
-        Ok(Model {
-            inner,
-            vocab: config.get_vocab(),
-            fixed_parameters: fixed_params,
-            count_header: counts,
-        })
+        if let Ok(count_header) = reader::arpa::read_arpa_header(&mut buf_read.lines()) {
+            self.verify_arpa(&count_header)?;
+            let inner = crate::cxx::CxxModel::load_from_file_with_config(&self.file_name, &config);
+            Ok(Model {
+                inner,
+                vocab: config.get_vocab(),
+                fixed_parameters: None,
+                count_header,
+            })
+        } else {
+            fd.seek(SeekFrom::Start(0))?;
+            let sanity_header = Sanity::from_file(&mut fd)?;
+            self.verify_sanity(sanity_header)?;
+            let fixed_params = headers::FixedParameters::from_file(&mut fd)?;
+            self.verify(&fixed_params)?;
+            let count_header = Counts::from_file(&mut fd, &fixed_params)?;
+
+            let inner = crate::cxx::CxxModel::load_from_file_with_config(&self.file_name, &config);
+            Ok(Model {
+                inner,
+                vocab: config.get_vocab(),
+                fixed_parameters: Some(fixed_params),
+                count_header,
+            })
+        }
     }
 }
