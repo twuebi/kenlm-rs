@@ -56,7 +56,7 @@ impl ProbNgram {
         let ngram = pieces.join(" ");
 
         Ok(Self {
-            ngram: NGram { ngram },
+            ngram: NGram(ngram),
             prob: log_prob,
         })
     }
@@ -80,7 +80,7 @@ impl ProbBackoffNgram {
         let ngram = pieces.rev().join(" ");
 
         Ok(Self {
-            ngram: NGram { ngram },
+            ngram: NGram(ngram),
             prob_backoff: ProbBackoff { log_prob, backoff },
         })
     }
