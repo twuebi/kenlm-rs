@@ -7,9 +7,7 @@ pub struct ProbBackoff {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct NGram {
-    ngram: String, // TODO: this sensible?
-}
+pub struct NGram(String); // TODO: this sensible?
 
 #[derive(Debug, Clone)]
 pub struct ProbBackoffNgram {
