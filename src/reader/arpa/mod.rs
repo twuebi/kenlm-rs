@@ -32,6 +32,8 @@ pub enum ArpaReadError {
     SectionBoundaryMissing,
     #[error("The no-backoff section is malformed.")]
     NoBackoffSectionError,
+    #[error("An IO error occured while reading the arpa file: {0}")]
+    IoError(#[from] std::io::Error),
 }
 
 pub enum ArpaSection {
@@ -89,13 +91,15 @@ where
     }
 
     fn read_count_header(reader: &mut Lines<B>) -> Result<Counts, ArpaReadError> {
-        if let Some(Ok(line)) = reader.next() {
-            if line != Self::ARPA_DATA_HEADER {
+        match reader.next().transpose()?.as_deref() {
+            Some(Self::ARPA_DATA_HEADER) => {}
+            _ => {
                 return Err(ArpaReadError::DataHeaderMissing);
             }
         }
+
         let mut counts = vec![];
-        while let Some(Ok(line)) = reader.next() {
+        while let Some(line) = reader.next().transpose()? {
             if line.trim().is_empty() {
                 break;
             }
@@ -115,7 +119,7 @@ where
         &mut self,
         counts: NGramCardinality,
     ) -> Result<Vec<ProbNgram>, ArpaReadError> {
-        if let Some(Ok(line)) = dbg!(self.reader.next()) {
+        if let Some(line) = self.reader.next().transpose()? {
             matches_ngram_section_header(&line, counts.order)?;
         } else {
             return Err(ArpaReadError::NGramSectionHeaderMissing);
@@ -206,7 +210,7 @@ fn read_backoff_section<B: BufRead>(
     reader: &mut Lines<B>,
     count: &NGramCardinality,
 ) -> Result<Vec<ProbBackoffNgram>, ArpaReadError> {
-    if let Some(Ok(line)) = dbg!(reader.next()) {
+    if let Some(line) = reader.next().transpose()? {
         matches_ngram_section_header(&line, count.order)?;
     } else {
         return Err(ArpaReadError::NGramSectionHeaderMissing);
@@ -219,7 +223,7 @@ fn read_backoff_section<B: BufRead>(
     if prob_backoff_ngrams.len() != count.cardinality {
         return Err(ArpaReadError::NgramCountsMismatch);
     }
-    if let Some(Ok(line)) = reader.next() {
+    if let Some(line) = reader.next().transpose()? {
         if !line.trim().is_empty() {
             return Err(ArpaReadError::SectionBoundaryMissing);
         }
