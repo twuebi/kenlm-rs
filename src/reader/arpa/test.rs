@@ -6,9 +6,12 @@ use std::{
 
 use approx::assert_abs_diff_eq;
 
-use crate::{headers::Counts, reader::arpa::read_arpa};
+use crate::{
+    headers::{Counts, NGramCardinality},
+    reader::arpa::read_arpa,
+};
 
-use super::{read_arpa_header, ArpaReadError, NGram, ProbBackoff, ProbBackoffNgram, ProbNgram};
+use super::{ArpaReadError, ArpaReader, NGram, ProbBackoff, ProbBackoffNgram, ProbNgram};
 
 fn compare_expectation(thing: ProbBackoff, expectation: ProbBackoff) {
     approx::assert_abs_diff_eq!(thing.backoff, expectation.backoff);
@@ -53,8 +56,8 @@ fn test_reads() {
 fn test_no_data_header() {
     let fd = fs::File::open("test_data/arpa/arpa_no_data_header.arpa").unwrap();
     let buf_read = BufReader::new(fd);
-    let mut lines = buf_read.lines();
-    let err = read_arpa_header(&mut lines);
+    let lines = buf_read.lines();
+    let err = ArpaReader::new(lines);
     match err {
         Ok(_) => panic!("returned Ok when it should have been `Err(DataHeaderMissing)`"),
         Err(err) => assert!(matches!(err, ArpaReadError::DataHeaderMissing)),
@@ -65,8 +68,8 @@ fn test_no_data_header() {
 fn test_no_ngram_counts() {
     let fd = fs::File::open("test_data/arpa/arpa_no_counts.arpa").unwrap();
     let buf_read = BufReader::new(fd);
-    let mut lines = buf_read.lines();
-    let err = read_arpa_header(&mut lines);
+    let lines = buf_read.lines();
+    let err = ArpaReader::new(lines);
     match err {
         Ok(_) => panic!("returned Ok when it should have been `Err(NgramCountsMissing)`"),
         Err(err) => assert!(matches!(err, ArpaReadError::NgramCountsMissing)),
@@ -77,13 +80,15 @@ fn test_no_ngram_counts() {
 fn test_header() {
     let fd = fs::File::open("test_data/arpa/lm.arpa").unwrap();
     let buf_read = BufReader::new(fd);
-    let mut lines = buf_read.lines();
-    let counts = read_arpa_header(&mut lines).unwrap();
+    let lines = buf_read.lines();
+    let err = ArpaReader::new(lines).unwrap();
     assert_eq!(
-        Counts {
-            counts: vec![4415, 18349]
-        },
-        counts
+        Counts::from_count_vec(vec![
+            NGramCardinality::try_from_order_and_cardinality(1, 4415).unwrap(),
+            NGramCardinality::try_from_order_and_cardinality(2, 18349).unwrap()
+        ])
+        .unwrap(),
+        err.counts
     )
 }
 

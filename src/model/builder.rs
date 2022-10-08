@@ -1,7 +1,8 @@
 use std::io::{BufRead, BufReader, Seek, SeekFrom};
 
 use crate::headers::{Counts, FixedParameters, Sanity};
-use crate::{headers, reader, Error, LoadMethod};
+use crate::reader::arpa::ArpaReader;
+use crate::{headers, Error, LoadMethod};
 
 use crate::cxx::bridge::get_max_order;
 
@@ -58,10 +59,10 @@ impl ModelBuilder {
     }
 
     pub(crate) fn verify_arpa(&self, counts: &Counts) -> Result<(), Error> {
-        if (get_max_order() as usize) < counts.counts.len() {
+        if (get_max_order() as usize) < counts.order().into() {
             return Err(Error::IncompatibleMaxOrder {
                 max_order: get_max_order().into(),
-                model_order: counts.counts.len(),
+                model_order: counts.order().into(),
             });
         }
         Ok(())
@@ -77,14 +78,14 @@ impl ModelBuilder {
             config.add_vocab_fetch_callback();
         };
 
-        if let Ok(count_header) = reader::arpa::read_arpa_header(&mut buf_read.lines()) {
-            self.verify_arpa(&count_header)?;
+        if let Ok(arpa_reader) = ArpaReader::new(buf_read.lines()) {
+            self.verify_arpa(arpa_reader.counts())?;
             let inner = crate::cxx::CxxModel::load_from_file_with_config(&self.file_name, &config);
             Ok(Model {
                 inner,
                 vocab: config.get_vocab(),
                 fixed_parameters: None,
-                count_header,
+                count_header: arpa_reader.counts().clone(),
             })
         } else {
             fd.seek(SeekFrom::Start(0))?;
@@ -92,7 +93,7 @@ impl ModelBuilder {
             self.verify_sanity(sanity_header)?;
             let fixed_params = headers::FixedParameters::from_file(&mut fd)?;
             self.verify(&fixed_params)?;
-            let count_header = Counts::from_file(&mut fd, &fixed_params)?;
+            let count_header = Counts::from_kenlm_binary(&mut fd, &fixed_params)?;
 
             let inner = crate::cxx::CxxModel::load_from_file_with_config(&self.file_name, &config);
             Ok(Model {
