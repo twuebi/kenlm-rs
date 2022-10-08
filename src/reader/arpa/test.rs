@@ -12,8 +12,8 @@ use crate::{
 use super::{ArpaReadError, ArpaReader, NGram, ProbBackoff, ProbBackoffNgram, ProbNgram};
 
 fn compare_expectation(thing: ProbBackoff, expectation: ProbBackoff) {
-    approx::assert_abs_diff_eq!(thing.backoff, expectation.backoff);
-    approx::assert_abs_diff_eq!(thing.log_prob, expectation.log_prob);
+    assert_abs_diff_eq!(thing.backoff, expectation.backoff);
+    assert_abs_diff_eq!(thing.log_prob, expectation.log_prob);
 }
 
 fn check_probbackoff_for_order<T>(
@@ -48,7 +48,7 @@ where
 
 #[test]
 fn test_reads() {
-    let fd = std::fs::File::open("test_data/arpa/lm_small.arpa").unwrap();
+    let fd = fs::File::open("test_data/arpa/lm_small.arpa").unwrap();
     let br = BufReader::new(fd);
 
     let ArpaFileSections {
@@ -57,6 +57,7 @@ fn test_reads() {
         no_backoff,
     } = read_arpa(br, StringProcessor).unwrap();
     assert_eq!(backoffs.len(), 2);
+
     let uni_expect = get_unigrams();
     check_probbackoff_for_order(&backoffs[0], uni_expect);
     let bi_expect = get_bigrams();

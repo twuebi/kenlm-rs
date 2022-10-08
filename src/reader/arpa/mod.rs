@@ -41,8 +41,7 @@ pub enum ArpaReadError {
 
 pub struct ArpaModel<T>
 where
-    T: NGramProcessor,
-    <T as NGramProcessor>::Output: NGramRep,
+    T: NGramRep,
 {
     pub vocab: Mappings,
     pub sections: ArpaFileSections<T>,
@@ -50,12 +49,11 @@ where
 
 pub struct ArpaFileSections<T>
 where
-    T: NGramProcessor,
-    <T as NGramProcessor>::Output: NGramRep,
+    T: NGramRep,
 {
     pub counts: Counts,
-    pub backoffs: Vec<Vec<ProbBackoffNgram<T::Output>>>,
-    pub no_backoff: Vec<ProbNgram<T::Output>>,
+    pub backoffs: Vec<Vec<ProbBackoffNgram<T>>>,
+    pub no_backoff: Vec<ProbNgram<T>>,
 }
 
 pub trait NGramProcessor {
@@ -172,7 +170,7 @@ where
     /// Consumes the remainder of the reader and parses it according to the count-header of the file
     /// returns a tuple where the first element are the backoff sections in ascending ngram order,
     /// the second element is the highest order section which has no backoff values.
-    pub fn into_arpa_sections(mut self) -> Result<ArpaFileSections<T>, ArpaReadError> {
+    pub fn into_arpa_sections(mut self) -> Result<ArpaFileSections<T::Output>, ArpaReadError> {
         let mut backoffs = vec![];
         while let Some(backoff) = self.next_backoff_section()? {
             backoffs.push(backoff)
@@ -344,7 +342,7 @@ fn matches_ngram_section_header(line: &str, order: NonZeroUsize) -> Result<(), A
 pub fn read_arpa<B, T>(
     buf_read: B,
     ngram_processor: T,
-) -> Result<ArpaFileSections<T>, ArpaReadError>
+) -> Result<ArpaFileSections<T::Output>, ArpaReadError>
 where
     B: BufRead,
     T: NGramProcessor,
