@@ -81,7 +81,6 @@ impl NgramWithProb {
             return Err(ArpaReadError::BackOffSectionError);
         };
         let ngram = pieces
-            .rev()
             .map(|pc| {
                 let idx = bidi.insert_or_get(pc.to_string());
                 idx
@@ -182,7 +181,7 @@ struct ProbBackoff {
     log_prob: f32,
     backoff: f32,
 }
-
+#[derive(Debug)]
 struct Model {
     unigrams: Vec<ProbBackoff>,
     lookups: Vec<Scores>,
@@ -200,6 +199,7 @@ enum Scores {
 }
 fn vec_into_bytes(vec: &[u32]) -> Vec<u8> {
     vec.into_iter()
+        .rev()
         .map(|v| v.to_le_bytes())
         .flatten()
         .collect_vec()
@@ -213,12 +213,12 @@ impl Model {
     fn from_arpa(file_name: &str) -> Self {
         let (backoff, longest, mapping, order) = read_arpa(file_name).unwrap();
 
-        let order_minus_one = backoff.len();
         let mut unis = (&backoff[0]).clone();
-        let n_unis = unis.len();
+
         let n_rest: usize = backoff[1..].iter().map(|c| c.len()).sum();
         let mut lookups = vec![];
-        let things = backoff[1..]
+        let mut search = vec![];
+        backoff[..]
             .into_iter()
             .flat_map(|s| s.iter())
             .for_each(|item| {
@@ -226,15 +226,17 @@ impl Model {
                     log_prob: item.log_prob,
                     backoff: item.backoff,
                 }));
+                search.push(item.as_ngram());
             });
         longest.iter().for_each(|c| {
             lookups.push(Scores::Longest(c.log_prob));
+            search.push(c.as_ngram());
         });
+
         let n_longest: usize = longest.len();
-        let search = backoff[1..]
+        let search = search
             .into_iter()
-            .flat_map(|s| s.iter().map(|c| vec_into_bytes(c.as_ngram())))
-            .chain(longest.into_iter().map(|c| vec_into_bytes(c.as_ngram())))
+            .map(|c| vec_into_bytes(&c))
             .enumerate()
             .sorted_by(|c, c2| c.1.cmp(&c2.1))
             .map(|(a, b)| (b, a as u64));
@@ -301,14 +303,53 @@ impl Model {
             },
         ))
     }
+    #[tracing::instrument(skip(self), ret)]
+    fn score_next<const S: usize>(&self, in_state: RingBuffer<S>, word: u32) -> RingBuffer<S> {
+        let mut addr = self.fst.as_fst().root().addr();
+        let mut output = Output::zero();
+        let mut out_state = in_state.clone();
+        tracing::info!("score_next");
+        in_state.words[in_state.words.len() - in_state.size..]
+            .iter()
+            .chain([word].iter())
+            .rev()
+            .for_each(|new_word| {
+                if let Some((new_addr, new_out, Some(final_output))) =
+                    self.lookup_next(addr, output, *new_word)
+                {
+                    output = new_out;
+                    addr = new_addr;
+                    match *self.fetch_scores(final_output) {
+                        crate::reader::arpa::exp::Scores::Longest(score) => {
+                            out_state.push(*new_word, score, 0f32)
+                        }
+                        crate::reader::arpa::exp::Scores::Middle(mid) => {
+                            out_state.push(*new_word, mid.log_prob, mid.backoff)
+                        }
+                    }
+                } else {
+                    out_state.push(*new_word, 0f32, 0f32);
+                }
+            });
+        tracing::info!(?out_state);
+        out_state
+    }
 
     fn score(&self, context: &[u32], word: u32) -> Vec<Option<Scores>> {
         let mut addr = self.fst.as_fst().root().addr();
         let mut output = Output::zero();
         let mut state_collector = vec![None; self.order];
-        let uni = self.unigrams[context[0] as usize];
-        state_collector[0] = Some(Scores::Middle(uni));
-        for (w, widx) in context.into_iter().enumerate() {
+
+        // state_collector[self.order - 1] = Some(Scores::Middle(uni));
+        dbg!(&context);
+        dbg!(&word);
+        dbg!(&context
+            .into_iter()
+            .chain([word].iter())
+            .rev()
+            .enumerate()
+            .collect::<Vec<_>>());
+        for (w, widx) in context.into_iter().chain([word].iter()).rev().enumerate() {
             if let Some((new_addr, new_out, final_output)) =
                 dbg!(self.lookup_next(addr, output, *widx))
             {
@@ -318,37 +359,19 @@ impl Model {
                     let scores = self.fetch_scores(finished);
                     state_collector[w] = Some(*scores);
                 } else {
+                    eprintln!("{w} ::: {widx}");
                     state_collector[..w]
                         .iter_mut()
                         .for_each(|thing| *thing = None);
                 }
             } else {
-                if w != 0 {
-                    addr = self.fst.as_fst().root().addr();
-                    output = Output::zero();
-                    state_collector = vec![None; self.order];
-                }
+                eprintln!("{w}");
+                eprintln!("mismatch");
+                break;
             }
-        }
-        if let Some((_, _, Some(final_output))) = dbg!(self.lookup_next(addr, output, word)) {
-            state_collector[self.order - 1] = Some(*self.fetch_scores(final_output));
         }
         state_collector
     }
-    // template <class Search, class VocabularyT>
-    // FullScoreReturn GenericModel<Search, VocabularyT>::FullScore(const State &in_state, const WordIndex new_word, State &out_state) const
-    // {
-    //   FullScoreReturn ret = ScoreExceptBackoff(in_state.words, in_state.words + in_state.length, new_word, out_state);
-    //   for (const float *i = in_state.backoff + ret.ngram_length - 1; i < in_state.backoff + in_state.length; ++i)
-    //   {
-    //     ret.prob += *i;
-    //   }
-    //   return ret;
-    // }
-    // typename Search::UnigramPointer uni(search_.LookupUnigram(new_word, node, ret.independent_left, ret.extend_left));
-    // out_state.backoff[0] = uni.Backoff();
-    // ret.prob = uni.Prob();
-    // ret.rest = uni.Rest();
 }
 
 fn read_backoff_sections<B: BufRead>(
@@ -366,21 +389,86 @@ fn read_backoff_sections<B: BufRead>(
     }
     Ok(sections)
 }
+#[derive(Debug, Clone)]
+pub struct RingBuffer<const SIZE: usize> {
+    // pub buffer: [(u32, f32, f32); SIZE],
+    pub words: [u32; SIZE],
+    pub backoffs: [f32; SIZE],
+    pub log_probs: [f32; SIZE],
+    pub size: usize,
+}
+
+impl<const SIZE: usize> RingBuffer<SIZE> {
+    pub const fn new() -> Self {
+        assert!(SIZE > 0);
+
+        Self {
+            words: [0; SIZE],
+            backoffs: [0f32; SIZE],
+            log_probs: [0f32; SIZE],
+            size: 0,
+        }
+    }
+
+    #[tracing::instrument]
+    pub fn push(&mut self, item: u32, log_prob: f32, backoff: f32) {
+        self.words.rotate_left(1);
+        self.words[self.words.len() - 1] = item;
+        self.log_probs.rotate_left(1);
+        self.log_probs[self.words.len() - 1] = log_prob;
+        self.backoffs.rotate_left(1);
+        self.backoffs[self.words.len() - 1] = backoff;
+        self.size += 1;
+        self.size = self.size.min(self.words.len());
+        tracing::info!("{self:?}");
+    }
+
+    pub fn len(&self) -> usize {
+        self.size
+    }
+}
 
 #[cfg(test)]
 mod test {
+    use std::str::FromStr;
+
+    use fst::{raw::Output, Streamer};
+    use tracing_subscriber::EnvFilter;
+
+    use crate::reader::arpa::exp::RingBuffer;
+
     use super::Model;
 
     #[test]
     fn test() {
-        let model = Model::from_arpa("test_data/arpa/lm_small.arpa");
-        let context = vec![
-            model.mapping.get_index("i").unwrap(),
-            model.mapping.get_index("have").unwrap(),
-        ];
-        let new_word = model.mapping.get_index("a").unwrap();
+        eprintln!("testing");
+        tracing_subscriber::fmt()
+            .with_env_filter(EnvFilter::from_default_env())
+            .init();
+        let mut ring: RingBuffer<3> = RingBuffer::new();
 
-        dbg!(model.score(&context, new_word));
+        // for n in [0, 1, 4, 6, 7, 8] {
+        //     ring.push(n);
+        //     eprintln!("{}: {ring:?}", ring.len())
+        // }
+        let model = Model::from_arpa("test_data/arpa/lm_small.arpa");
+
+        let context = dbg!(vec![3, 4, 5, 6, 7, 8]);
+        let mut instate = RingBuffer::<3>::new();
+        for word in context {
+            instate = model.score_next(instate, word);
+            eprintln!("{instate:?}")
+        }
+
+        let state = RingBuffer::<3>::new();
+        // let new_word = ;
+        // dbg!(&model.mapping);
+
+        let mut addr = model.fst.as_fst().root().addr();
+        let mut output = Output::zero();
+
+        // state_collector[self.order - 1] = Some(Scores::Middle(uni));
+
         panic!();
     }
 }
