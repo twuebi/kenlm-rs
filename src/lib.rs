@@ -3,9 +3,11 @@
 mod cxx;
 pub mod headers;
 pub(crate) mod model;
+pub mod reader;
 
 pub use crate::cxx::LoadMethod;
 
+use headers::InvalidCounts;
 pub use model::{Model, State, WordIdx};
 
 #[derive(thiserror::Error, Debug)]
@@ -21,6 +23,8 @@ pub enum Error {
     ModelHasNoVocab,
     #[error("Decoding the fixed width parameter header failed, likely the model file is broken or incompatible.")]
     ParamHeaderFormatError,
+    #[error("Decoding the count header failed, likely the model file is broken or incompatible.")]
+    CountHeaderError(#[from] InvalidCounts),
     #[error("Decoding the sanity header failed, likely the model file is broken or incompatible.")]
     SanityFormatError,
     #[error("The sanity header did not match the reference header. Likely the model is broken or incompatible.")]

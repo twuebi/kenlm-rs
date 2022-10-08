@@ -17,7 +17,7 @@ use self::builder::ModelBuilder;
 /// parameters, it also stores the vocab as a [Vec<String>].
 pub struct Model {
     inner: CxxModel,
-    fixed_parameters: FixedParameters,
+    fixed_parameters: Option<FixedParameters>,
     count_header: Counts,
     vocab: Option<Vec<String>>,
 }
@@ -64,11 +64,13 @@ impl Model {
             .build()
     }
 
-    /// Get some information about the currently loaded model
+    /// Get some information about the currently loaded model, binary only
     ///
-    /// [FixedParameterHeader] holds information about the order, formats and some internals
+    /// This will be None if you did load an arpa format model.
+    ///
+    /// This struct holds information about the order, formats and some internals
     /// of the currently loaded kenlm model.
-    pub fn get_fixed_parameter_header(&self) -> &FixedParameters {
+    pub fn get_fixed_parameter_header(&self) -> &Option<FixedParameters> {
         &self.fixed_parameters
     }
 
@@ -334,6 +336,28 @@ mod test {
     #[test]
     fn loads_trie_model() {
         let _model = Model::new("test_data/carol_probing_bigram.bin", false).expect("should exist");
+    }
+
+    #[test]
+    fn loads_small_arpa_model() {
+        let _model = Model::new("test_data/arpa/lm_small.arpa", false).expect("should exist");
+    }
+
+    #[test]
+    fn loads_small_arpa_model_with_vocab() {
+        let model = Model::new("test_data/arpa/lm_small.arpa", true).expect("should exist");
+        assert_eq!(
+            model.get_vocab().unwrap(),
+            &[
+                "<unk>", "<s>", "</s>", "i", "have", "a", "good", "deal", "of", "will", "you",
+                "remember"
+            ]
+        )
+    }
+
+    #[test]
+    fn loads_big_arpa_model_with_vocab() {
+        let _model = Model::new("test_data/arpa/lm.arpa", true).expect("should exist");
     }
 
     #[test]

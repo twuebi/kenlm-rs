@@ -1,13 +1,15 @@
 mod counts;
 pub(crate) mod fixed_width_params;
 pub(crate) mod sanity;
-pub use counts::Counts;
+pub use counts::{Counts, InvalidCounts, NGramCardinality};
 pub use fixed_width_params::FixedParameters;
 pub(crate) use sanity::Sanity;
 
 #[cfg(test)]
 mod test {
-    use crate::headers::{counts::Counts, FixedParameters};
+    use std::num::NonZeroUsize;
+
+    use crate::headers::{counts::Counts, FixedParameters, NGramCardinality};
 
     use super::total_header_size;
 
@@ -26,13 +28,24 @@ mod test {
         assert_eq!(sanity, super::Sanity::REFERENCE);
         let fixed = FixedParameters::from_file(&mut fd).unwrap();
         assert_eq!(fixed, expected_fixed);
-        let counts = Counts::from_file(&mut fd, &fixed).unwrap();
+        let counts = Counts::from_kenlm_binary(&mut fd, &fixed).unwrap();
         assert_eq!(
             counts,
-            Counts {
-                //.. why??
-                counts: vec![24, 24, 24]
-            }
+            Counts::from_count_vec(vec![
+                NGramCardinality {
+                    cardinality: 24,
+                    order: NonZeroUsize::try_from(1).unwrap()
+                },
+                NGramCardinality {
+                    cardinality: 24,
+                    order: NonZeroUsize::try_from(2).unwrap()
+                },
+                NGramCardinality {
+                    cardinality: 24,
+                    order: NonZeroUsize::try_from(3).unwrap()
+                }
+            ])
+            .unwrap()
         );
     }
 
@@ -51,12 +64,15 @@ mod test {
         assert_eq!(sanity, super::Sanity::REFERENCE);
         let fixed = FixedParameters::from_file(&mut fd).unwrap();
         assert_eq!(fixed, expected_fixed);
-        let counts = Counts::from_file(&mut fd, &fixed).unwrap();
+        let counts = Counts::from_kenlm_binary(&mut fd, &fixed).unwrap();
         assert_eq!(
             counts,
-            Counts {
-                counts: vec![4415, 18349, 25612]
-            }
+            Counts::from_count_vec(vec![
+                NGramCardinality::try_from_order_and_cardinality(1, 4415).unwrap(),
+                NGramCardinality::try_from_order_and_cardinality(2, 18349).unwrap(),
+                NGramCardinality::try_from_order_and_cardinality(3, 25612).unwrap()
+            ])
+            .unwrap()
         );
     }
 
@@ -75,12 +91,14 @@ mod test {
         assert_eq!(sanity, super::Sanity::REFERENCE);
         let fixed = FixedParameters::from_file(&mut fd).unwrap();
         assert_eq!(fixed, expected_fixed);
-        let counts = Counts::from_file(&mut fd, &fixed).unwrap();
+        let counts = Counts::from_kenlm_binary(&mut fd, &fixed).unwrap();
         assert_eq!(
             counts,
-            Counts {
-                counts: vec![4415, 18349]
-            }
+            Counts::from_count_vec(vec![
+                NGramCardinality::try_from_order_and_cardinality(1, 4415).unwrap(),
+                NGramCardinality::try_from_order_and_cardinality(2, 18349).unwrap()
+            ])
+            .unwrap()
         );
     }
 
