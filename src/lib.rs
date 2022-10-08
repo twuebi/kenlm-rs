@@ -2,6 +2,7 @@
 
 mod cxx;
 pub mod headers;
+mod mapping;
 pub(crate) mod model;
 pub mod reader;
 

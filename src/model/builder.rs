@@ -1,8 +1,8 @@
 use std::io::{BufReader, Seek, SeekFrom};
 
 use crate::headers::{Counts, FixedParameters, Sanity};
-use crate::reader::arpa::ArpaReader;
-use crate::{headers, Error, LoadMethod};
+use crate::reader::arpa::{ArpaReader, NoOpProc};
+use crate::{Error, LoadMethod};
 
 use crate::cxx::bridge::get_max_order;
 
@@ -76,8 +76,8 @@ impl ModelBuilder {
         if self.vocab {
             config.add_vocab_fetch_callback();
         };
-
-        if let Ok(arpa_reader) = ArpaReader::new(BufReader::new(&mut fd)) {
+        let ngram_processor = NoOpProc;
+        if let Ok(arpa_reader) = ArpaReader::<_, _>::new(BufReader::new(&mut fd), ngram_processor) {
             self.verify_arpa(arpa_reader.counts())?;
             let inner = crate::cxx::CxxModel::load_from_file_with_config(&self.file_name, &config);
             Ok(Model {
@@ -90,7 +90,7 @@ impl ModelBuilder {
             fd.seek(SeekFrom::Start(0))?;
             let sanity_header = Sanity::from_file(&mut fd)?;
             self.verify_sanity(sanity_header)?;
-            let fixed_params = headers::FixedParameters::from_file(&mut fd)?;
+            let fixed_params = FixedParameters::from_file(&mut fd)?;
             self.verify(&fixed_params)?;
             let count_header = Counts::from_kenlm_binary(&mut fd, &fixed_params)?;
 

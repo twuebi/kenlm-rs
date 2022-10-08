@@ -1,8 +1,10 @@
 use itertools::Itertools;
-use std::str::SplitAsciiWhitespace;
+use std::io::Lines;
 use std::{io::BufRead, num::NonZeroUsize};
 
 use crate::headers::{Counts, InvalidCounts, NGramCardinality};
+use crate::mapping::{BidirectionalMapping, Mappings};
+use crate::reader::NGramRep;
 
 use super::{NGram, ProbBackoff, ProbBackoffNgram, ProbNgram};
 
@@ -37,10 +39,59 @@ pub enum ArpaReadError {
     InvalidReaderState,
 }
 
-pub struct ArpaFileSections {
+pub struct ArpaModel<T>
+where
+    T: NGramProcessor,
+    <T as NGramProcessor>::Output: NGramRep,
+{
+    pub vocab: Mappings,
+    pub sections: ArpaFileSections<T>,
+}
+
+pub struct ArpaFileSections<T>
+where
+    T: NGramProcessor,
+    <T as NGramProcessor>::Output: NGramRep,
+{
     pub counts: Counts,
-    pub backoffs: Vec<Vec<ProbBackoffNgram>>,
-    pub no_backoff: Vec<ProbNgram>,
+    pub backoffs: Vec<Vec<ProbBackoffNgram<T::Output>>>,
+    pub no_backoff: Vec<ProbNgram<T::Output>>,
+}
+
+pub trait NGramProcessor {
+    type Output;
+
+    fn process_ngram<'a>(&mut self, pieces: impl Iterator<Item = &'a str>) -> Self::Output;
+}
+
+pub struct StringProcessor;
+
+impl NGramProcessor for StringProcessor {
+    type Output = String;
+
+    fn process_ngram<'a>(&mut self, mut pieces: impl Iterator<Item = &'a str>) -> Self::Output {
+        pieces.join(" ")
+    }
+}
+
+pub struct IntVocabProcessor(Box<dyn BidirectionalMapping<u32, String>>);
+
+impl NGramProcessor for IntVocabProcessor {
+    type Output = Vec<u32>;
+
+    fn process_ngram<'a>(&mut self, pieces: impl Iterator<Item = &'a str>) -> Self::Output {
+        pieces
+            .map(|pc| self.0.insert_or_get_index(pc.to_string()))
+            .collect()
+    }
+}
+
+pub struct NoOpProc;
+
+impl NGramProcessor for NoOpProc {
+    type Output = ();
+
+    fn process_ngram<'a>(&mut self, _: impl Iterator<Item = &'a str>) -> Self::Output {}
 }
 
 /// Arpa reader
@@ -71,15 +122,18 @@ pub struct ArpaFileSections {
 /// to have two columns, `log_prob` and `ngram`. It is again split on whitespace,
 /// the first element is parsed to float, the rest is treated as a white-space
 /// separated n-gram.
-pub struct ArpaReader<B> {
-    reader: B,
+pub struct ArpaReader<B, T> {
+    reader: Lines<B>,
     counts: Counts,
     cur_section: NonZeroUsize,
+    ngram_processor: T,
 }
 
-impl<B> ArpaReader<B>
+impl<B, T> ArpaReader<B, T>
 where
     B: BufRead,
+    T: NGramProcessor,
+    <T as NGramProcessor>::Output: NGramRep,
 {
     const ARPA_DATA_HEADER: &'_ str = "\\data\\";
     const ARPA_NGRAM_KEY: &'_ str = "ngram ";
@@ -88,12 +142,14 @@ where
     ///
     /// Constructs the ArpaReader and validates it by parsing the count header
     /// describing the file.
-    pub fn new(mut reader: B) -> Result<Self, ArpaReadError> {
+    pub fn new(mut reader: B, ngram_processor: T) -> Result<Self, ArpaReadError> {
         let counts = Self::read_count_header(&mut reader)?;
+
         Ok(Self {
             counts,
-            reader,
+            reader: reader.lines(),
             cur_section: NonZeroUsize::try_from(1).unwrap(),
+            ngram_processor,
         })
     }
 
@@ -116,7 +172,7 @@ where
     /// Consumes the remainder of the reader and parses it according to the count-header of the file
     /// returns a tuple where the first element are the backoff sections in ascending ngram order,
     /// the second element is the highest order section which has no backoff values.
-    pub fn into_arpa_sections(mut self) -> Result<ArpaFileSections, ArpaReadError> {
+    pub fn into_arpa_sections(mut self) -> Result<ArpaFileSections<T>, ArpaReadError> {
         let mut backoffs = vec![];
         while let Some(backoff) = self.next_backoff_section()? {
             backoffs.push(backoff)
@@ -156,33 +212,36 @@ where
         Ok(Counts::from_count_vec(counts)?)
     }
 
-    fn next_backoff_section(&mut self) -> Result<Option<Vec<ProbBackoffNgram>>, ArpaReadError> {
+    fn next_backoff_section(
+        &mut self,
+    ) -> Result<Option<Vec<ProbBackoffNgram<T::Output>>>, ArpaReadError> {
         if self.cur_section >= self.order() {
             return Ok(None);
         }
         let count = if let Some(cnt) = self.counts.get(self.cur_section) {
-            cnt
+            *cnt
         } else {
             return Ok(None);
         };
 
-        let mut reader = (&mut self.reader).lines();
-        if let Some(next_line) = reader.next().transpose()? {
+        if let Some(next_line) = self.reader.next().transpose()? {
             matches_ngram_section_header(&next_line, count.order)?
         } else {
             return Err(ArpaReadError::NGramSectionHeaderMissing);
         };
 
-        let prob_backoff_ngrams = (&mut reader)
-            .take(count.cardinality)
-            .map(|s| s.map_err(|_| ArpaReadError::BackOffSectionError))
-            .map(|s| ProbBackoffNgram::try_from_arpa_line(&s?))
-            .collect::<Result<Vec<ProbBackoffNgram>, ArpaReadError>>()?;
+        let cardinality = count.cardinality;
+        let mut prob_backoff_ngrams = Vec::with_capacity(cardinality);
+        for _ in 0..cardinality {
+            if let Some(line) = self.reader.next() {
+                prob_backoff_ngrams.push(self.try_back_off_from_arpa_line(line?)?);
+            }
+        }
 
         if prob_backoff_ngrams.len() != count.cardinality {
             return Err(ArpaReadError::NgramCountsMismatch);
         }
-        if let Some(line) = reader.next().transpose()? {
+        if let Some(line) = self.reader.next().transpose()? {
             if !line.trim().is_empty() {
                 return Err(ArpaReadError::SectionBoundaryMissing);
             }
@@ -191,77 +250,83 @@ where
         Ok(Some(prob_backoff_ngrams))
     }
 
-    fn read_no_backoff_section(&mut self) -> Result<Vec<ProbNgram>, ArpaReadError> {
+    fn read_no_backoff_section(&mut self) -> Result<Vec<ProbNgram<T::Output>>, ArpaReadError> {
         if self.cur_section != self.order() {
             return Err(ArpaReadError::InvalidReaderState);
         }
 
-        let mut reader = (&mut self.reader).lines();
         let counts = self.counts.highest_order_count();
 
-        if let Some(line) = reader.next().transpose()? {
+        if let Some(line) = self.reader.next().transpose()? {
             matches_ngram_section_header(&line, counts.order)?;
         } else {
             return Err(ArpaReadError::NGramSectionHeaderMissing);
         }
-        let prob_backoff_ngrams = (&mut reader)
-            .take(counts.cardinality)
-            .map(|s| s.map_err(|_| ArpaReadError::BackOffSectionError))
-            .map(|s| ProbNgram::try_from_arpa_line(&s?))
-            .collect::<Result<Vec<ProbNgram>, ArpaReadError>>()?;
-        if prob_backoff_ngrams.len() != counts.cardinality {
+        let cardinality = counts.cardinality;
+        let mut prob_no_backoff_ngrams = Vec::with_capacity(cardinality);
+        for _ in 0..counts.cardinality {
+            if let Some(line) = self.reader.next() {
+                prob_no_backoff_ngrams.push(self.try_no_backoff_from_arpa_line(line?)?);
+            }
+        }
+
+        if prob_no_backoff_ngrams.len() != cardinality {
             return Err(ArpaReadError::NgramCountsMismatch);
         }
-        if let Some(Ok(line)) = reader.next() {
+        if let Some(Ok(line)) = self.reader.next() {
             if !line.trim().is_empty() {
                 return Err(ArpaReadError::SectionBoundaryMissing);
             }
         }
         self.cur_section = self.cur_section.saturating_add(1);
-        Ok(prob_backoff_ngrams)
+        Ok(prob_no_backoff_ngrams)
     }
-}
 
-impl ProbNgram {
-    fn try_from_arpa_line(line: &str) -> Result<Self, ArpaReadError> {
+    fn try_back_off_from_arpa_line(
+        &mut self,
+        line: String,
+    ) -> Result<ProbBackoffNgram<T::Output>, ArpaReadError> {
         let mut pieces = line.split_ascii_whitespace();
-        let log_prob = next_log_prob(&mut pieces)?;
+        let log_prob = next_float(&mut pieces, ArpaReadError::BackOffSectionError)?;
+        let mut pieces = pieces.rev();
 
-        let ngram = pieces.join(" ");
+        let backoff = next_float(&mut pieces, ArpaReadError::BackOffSectionError)?;
 
-        Ok(Self {
+        let ngram = self.ngram_processor.process_ngram(pieces.rev());
+
+        Ok(ProbBackoffNgram {
+            ngram: NGram(ngram),
+            prob_backoff: ProbBackoff { log_prob, backoff },
+        })
+    }
+
+    fn try_no_backoff_from_arpa_line(
+        &mut self,
+        line: String,
+    ) -> Result<ProbNgram<T::Output>, ArpaReadError> {
+        let mut pieces = line.split_ascii_whitespace();
+        let log_prob = next_float(&mut pieces, ArpaReadError::NoBackoffSectionError)?;
+
+        let ngram = self.ngram_processor.process_ngram(pieces);
+
+        Ok(ProbNgram {
             ngram: NGram(ngram),
             prob: log_prob,
         })
     }
 }
 
-fn next_log_prob(pieces: &mut SplitAsciiWhitespace) -> Result<f32, ArpaReadError> {
+fn next_float<'a>(
+    mut pieces: impl Iterator<Item = &'a str>,
+    error: ArpaReadError,
+) -> Result<f32, ArpaReadError> {
     pieces
         .next()
         .map(str::parse::<f32>)
-        .ok_or(ArpaReadError::NoBackoffSectionError)?
-        .map_err(|_| ArpaReadError::NoBackoffSectionError)
-}
-
-impl ProbBackoffNgram {
-    fn try_from_arpa_line(line: &str) -> Result<Self, ArpaReadError> {
-        let mut pieces = line.split_ascii_whitespace();
-        let log_prob = next_log_prob(&mut pieces)?;
-        let mut pieces = pieces.rev();
-        let backoff = if let Some(Ok(backoff)) = pieces.next().map(str::parse::<f32>) {
-            backoff
-        } else {
-            return Err(ArpaReadError::BackOffSectionError);
-        };
-
-        let ngram = pieces.rev().join(" ");
-
-        Ok(Self {
-            ngram: NGram(ngram),
-            prob_backoff: ProbBackoff { log_prob, backoff },
-        })
-    }
+        .transpose()
+        .ok()
+        .flatten()
+        .ok_or(error)
 }
 
 fn matches_ngram_section_header(line: &str, order: NonZeroUsize) -> Result<(), ArpaReadError> {
@@ -276,11 +341,16 @@ fn matches_ngram_section_header(line: &str, order: NonZeroUsize) -> Result<(), A
     Ok(())
 }
 
-pub fn read_arpa<B>(buf_read: B) -> Result<ArpaFileSections, ArpaReadError>
+pub fn read_arpa<B, T>(
+    buf_read: B,
+    ngram_processor: T,
+) -> Result<ArpaFileSections<T>, ArpaReadError>
 where
     B: BufRead,
+    T: NGramProcessor,
+    <T as NGramProcessor>::Output: NGramRep,
 {
-    ArpaReader::new(buf_read)?.into_arpa_sections()
+    ArpaReader::new(buf_read, ngram_processor)?.into_arpa_sections()
 }
 
 impl NGramCardinality {

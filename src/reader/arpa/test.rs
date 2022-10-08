@@ -2,7 +2,8 @@ use std::{fs, io::BufReader};
 
 use approx::assert_abs_diff_eq;
 
-use crate::reader::arpa::ArpaFileSections;
+use crate::reader::arpa::{ArpaFileSections, StringProcessor};
+use crate::reader::NGramRep;
 use crate::{
     headers::{Counts, NGramCardinality},
     reader::arpa::read_arpa,
@@ -15,7 +16,12 @@ fn compare_expectation(thing: ProbBackoff, expectation: ProbBackoff) {
     approx::assert_abs_diff_eq!(thing.log_prob, expectation.log_prob);
 }
 
-fn check_probbackoff_for_order(thing: &[ProbBackoffNgram], expectation: Vec<ProbBackoffNgram>) {
+fn check_probbackoff_for_order<T>(
+    thing: &[ProbBackoffNgram<T>],
+    expectation: Vec<ProbBackoffNgram<T>>,
+) where
+    T: NGramRep,
+{
     thing
         .iter()
         .cloned()
@@ -26,7 +32,10 @@ fn check_probbackoff_for_order(thing: &[ProbBackoffNgram], expectation: Vec<Prob
         })
 }
 
-fn check_prob_for_order(thing: &[ProbNgram], expectation: Vec<ProbNgram>) {
+fn check_prob_for_order<T>(thing: &[ProbNgram<T>], expectation: Vec<ProbNgram<T>>)
+where
+    T: NGramRep,
+{
     thing
         .iter()
         .cloned()
@@ -41,11 +50,12 @@ fn check_prob_for_order(thing: &[ProbNgram], expectation: Vec<ProbNgram>) {
 fn test_reads() {
     let fd = std::fs::File::open("test_data/arpa/lm_small.arpa").unwrap();
     let br = BufReader::new(fd);
+
     let ArpaFileSections {
         counts: _,
         backoffs,
         no_backoff,
-    } = read_arpa(br).unwrap();
+    } = read_arpa(br, StringProcessor).unwrap();
     assert_eq!(backoffs.len(), 2);
     let uni_expect = get_unigrams();
     check_probbackoff_for_order(&backoffs[0], uni_expect);
@@ -59,7 +69,7 @@ fn test_reads() {
 fn test_no_data_header() {
     let fd = fs::File::open("test_data/arpa/arpa_no_data_header.arpa").unwrap();
     let buf_read = BufReader::new(fd);
-    let err = ArpaReader::new(buf_read);
+    let err = ArpaReader::new(buf_read, StringProcessor);
     match err {
         Ok(_) => panic!("returned Ok when it should have been `Err(DataHeaderMissing)`"),
         Err(err) => assert!(matches!(err, ArpaReadError::DataHeaderMissing)),
@@ -70,7 +80,7 @@ fn test_no_data_header() {
 fn test_no_ngram_counts() {
     let fd = fs::File::open("test_data/arpa/arpa_no_counts.arpa").unwrap();
     let buf_read = BufReader::new(fd);
-    let err = ArpaReader::new(buf_read);
+    let err = ArpaReader::new(buf_read, StringProcessor);
     match err {
         Ok(_) => panic!("returned Ok when it should have been `Err(NgramCountsMissing)`"),
         Err(err) => assert!(matches!(err, ArpaReadError::NgramCountsMissing)),
@@ -81,11 +91,11 @@ fn test_no_ngram_counts() {
 fn test_header() {
     let fd = fs::File::open("test_data/arpa/lm.arpa").unwrap();
     let buf_read = BufReader::new(fd);
-    let err = ArpaReader::new(buf_read).unwrap();
+    let err = ArpaReader::new(buf_read, StringProcessor).unwrap();
     assert_eq!(
         Counts::from_count_vec(vec![
             NGramCardinality::try_from_order_and_cardinality(1, 4415).unwrap(),
-            NGramCardinality::try_from_order_and_cardinality(2, 18349).unwrap()
+            NGramCardinality::try_from_order_and_cardinality(2, 18349).unwrap(),
         ])
         .unwrap(),
         err.counts
@@ -134,7 +144,7 @@ macro_rules! prob_ngram {
 }
 
 #[allow(clippy::approx_constant)]
-pub fn get_trigrams() -> Vec<ProbNgram> {
+pub fn get_trigrams() -> Vec<ProbNgram<String>> {
     prob_ngram!(-0.21873854 ,"a a </s>";
     -0.10757457,	"you remember i";
     -0.18978158, "<s> i have";
@@ -150,7 +160,7 @@ pub fn get_trigrams() -> Vec<ProbNgram> {
 }
 
 #[allow(clippy::approx_constant)]
-pub fn get_bigrams() -> Vec<ProbBackoffNgram> {
+pub fn get_bigrams() -> Vec<ProbBackoffNgram<String>> {
     prob_backoff_ngram!(-0.68063426	,"a </s>",	-0.0;
     -0.250891	,"<s> i",	-0.30103;
     -0.250891	,"remember i",	-0.30103;
@@ -167,7 +177,7 @@ pub fn get_bigrams() -> Vec<ProbBackoffNgram> {
 }
 
 #[allow(clippy::approx_constant)]
-pub fn get_unigrams() -> Vec<ProbBackoffNgram> {
+pub fn get_unigrams() -> Vec<ProbBackoffNgram<String>> {
     prob_backoff_ngram!(-1.3424227,	"<unk>", -0.0;
     -0.0,           "<s>", -0.30103;
     -1.0761548,	"</s>", -0.0;
