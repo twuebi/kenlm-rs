@@ -2,6 +2,7 @@ use std::{fs, io::BufReader};
 
 use approx::assert_abs_diff_eq;
 
+use crate::reader::arpa::ArpaFileSections;
 use crate::{
     headers::{Counts, NGramCardinality},
     reader::arpa::read_arpa,
@@ -40,12 +41,16 @@ fn check_prob_for_order(thing: &[ProbNgram], expectation: Vec<ProbNgram>) {
 fn test_reads() {
     let fd = std::fs::File::open("test_data/arpa/lm_small.arpa").unwrap();
     let br = BufReader::new(fd);
-    let (with_backoff, no_backoff) = read_arpa(br).unwrap();
-    assert_eq!(with_backoff.len(), 2);
+    let ArpaFileSections {
+        counts: _,
+        backoffs,
+        no_backoff,
+    } = read_arpa(br).unwrap();
+    assert_eq!(backoffs.len(), 2);
     let uni_expect = get_unigrams();
-    check_probbackoff_for_order(&with_backoff[0], uni_expect);
+    check_probbackoff_for_order(&backoffs[0], uni_expect);
     let bi_expect = get_bigrams();
-    check_probbackoff_for_order(&with_backoff[1], bi_expect);
+    check_probbackoff_for_order(&backoffs[1], bi_expect);
     let tri_expect = get_trigrams();
     check_prob_for_order(&no_backoff, tri_expect);
 }
