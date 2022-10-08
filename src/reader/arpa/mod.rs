@@ -1,8 +1,5 @@
 use itertools::Itertools;
-use std::{
-    io::{BufRead, Lines},
-    num::NonZeroUsize,
-};
+use std::{io::BufRead, num::NonZeroUsize};
 
 use crate::headers::{Counts, InvalidCounts, NGramCardinality};
 
@@ -70,7 +67,7 @@ pub struct ArpaSectionIter<B> {
 }
 
 pub struct ArpaReader<B> {
-    reader: Lines<B>,
+    reader: B,
     counts: Counts,
 }
 
@@ -81,7 +78,7 @@ where
     const ARPA_DATA_HEADER: &str = "\\data\\";
     const ARPA_NGRAM_KEY: &str = "ngram ";
 
-    pub fn new(mut reader: Lines<B>) -> Result<Self, ArpaReadError> {
+    pub fn new(mut reader: B) -> Result<Self, ArpaReadError> {
         let counts = Self::read_count_header(&mut reader)?;
         Ok(Self { counts, reader })
     }
@@ -90,7 +87,8 @@ where
         self.counts.order()
     }
 
-    fn read_count_header(reader: &mut Lines<B>) -> Result<Counts, ArpaReadError> {
+    fn read_count_header(reader: &mut B) -> Result<Counts, ArpaReadError> {
+        let mut reader = reader.lines();
         match reader.next().transpose()?.as_deref() {
             Some(Self::ARPA_DATA_HEADER) => {}
             _ => {
@@ -119,12 +117,13 @@ where
         &mut self,
         counts: NGramCardinality,
     ) -> Result<Vec<ProbNgram>, ArpaReadError> {
-        if let Some(line) = self.reader.next().transpose()? {
+        let mut reader = (&mut self.reader).lines();
+        if let Some(line) = reader.next().transpose()? {
             matches_ngram_section_header(&line, counts.order)?;
         } else {
             return Err(ArpaReadError::NGramSectionHeaderMissing);
         }
-        let prob_backoff_ngrams = (&mut self.reader)
+        let prob_backoff_ngrams = (&mut reader)
             .take(counts.cardinality)
             .map(|s| s.map_err(|_| ArpaReadError::BackOffSectionError))
             .map(|s| ProbNgram::try_from_arpa_line(&s?))
@@ -132,7 +131,7 @@ where
         if prob_backoff_ngrams.len() != counts.cardinality {
             return Err(ArpaReadError::NgramCountsMismatch);
         }
-        if let Some(Ok(line)) = self.reader.next() {
+        if let Some(Ok(line)) = reader.next() {
             if !line.trim().is_empty() {
                 return Err(ArpaReadError::SectionBoundaryMissing);
             }
@@ -207,15 +206,16 @@ fn matches_ngram_section_header(line: &str, order: NonZeroUsize) -> Result<(), A
 }
 
 fn read_backoff_section<B: BufRead>(
-    reader: &mut Lines<B>,
+    reader: B,
     count: &NGramCardinality,
 ) -> Result<Vec<ProbBackoffNgram>, ArpaReadError> {
+    let mut reader = reader.lines();
     if let Some(line) = reader.next().transpose()? {
         matches_ngram_section_header(&line, count.order)?;
     } else {
         return Err(ArpaReadError::NGramSectionHeaderMissing);
     }
-    let prob_backoff_ngrams = reader
+    let prob_backoff_ngrams = (&mut reader)
         .take(count.cardinality)
         .map(|s| s.map_err(|_| ArpaReadError::BackOffSectionError))
         .map(|s| ProbBackoffNgram::try_from_arpa_line(&s?))
@@ -237,7 +237,7 @@ pub fn read_arpa<B>(
 where
     B: BufRead,
 {
-    let reader = ArpaReader::new(buf_read.lines())?;
+    let reader = ArpaReader::new(buf_read)?;
     let mut section_iter = reader.into_section_iter();
 
     let (backoffs, no_backoffs) =

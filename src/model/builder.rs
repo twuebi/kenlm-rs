@@ -1,4 +1,4 @@
-use std::io::{BufRead, BufReader, Seek, SeekFrom};
+use std::io::{BufReader, Seek, SeekFrom};
 
 use crate::headers::{Counts, FixedParameters, Sanity};
 use crate::reader::arpa::ArpaReader;
@@ -71,14 +71,13 @@ impl ModelBuilder {
     pub(crate) fn build(self) -> Result<Model, Error> {
         let mut fd = std::fs::File::open(&self.file_name)
             .map_err(|_| Error::FileNotFound(self.file_name.to_string()))?;
-        let buf_read = BufReader::new(&mut fd);
         let mut config = crate::cxx::Config::default();
         config.set_load_method(self.load_method)?;
         if self.vocab {
             config.add_vocab_fetch_callback();
         };
 
-        if let Ok(arpa_reader) = ArpaReader::new(buf_read.lines()) {
+        if let Ok(arpa_reader) = ArpaReader::new(BufReader::new(&mut fd)) {
             self.verify_arpa(arpa_reader.counts())?;
             let inner = crate::cxx::CxxModel::load_from_file_with_config(&self.file_name, &config);
             Ok(Model {

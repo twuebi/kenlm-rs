@@ -1,7 +1,4 @@
-use std::{
-    fs,
-    io::{BufRead, BufReader},
-};
+use std::{fs, io::BufReader};
 
 use approx::assert_abs_diff_eq;
 
@@ -57,8 +54,7 @@ fn test_reads() {
 fn test_no_data_header() {
     let fd = fs::File::open("test_data/arpa/arpa_no_data_header.arpa").unwrap();
     let buf_read = BufReader::new(fd);
-    let lines = buf_read.lines();
-    let err = ArpaReader::new(lines);
+    let err = ArpaReader::new(buf_read);
     match err {
         Ok(_) => panic!("returned Ok when it should have been `Err(DataHeaderMissing)`"),
         Err(err) => assert!(matches!(err, ArpaReadError::DataHeaderMissing)),
@@ -69,8 +65,7 @@ fn test_no_data_header() {
 fn test_no_ngram_counts() {
     let fd = fs::File::open("test_data/arpa/arpa_no_counts.arpa").unwrap();
     let buf_read = BufReader::new(fd);
-    let lines = buf_read.lines();
-    let err = ArpaReader::new(lines);
+    let err = ArpaReader::new(buf_read);
     match err {
         Ok(_) => panic!("returned Ok when it should have been `Err(NgramCountsMissing)`"),
         Err(err) => assert!(matches!(err, ArpaReadError::NgramCountsMissing)),
@@ -81,8 +76,7 @@ fn test_no_ngram_counts() {
 fn test_header() {
     let fd = fs::File::open("test_data/arpa/lm.arpa").unwrap();
     let buf_read = BufReader::new(fd);
-    let lines = buf_read.lines();
-    let err = ArpaReader::new(lines).unwrap();
+    let err = ArpaReader::new(buf_read).unwrap();
     assert_eq!(
         Counts::from_count_vec(vec![
             NGramCardinality::try_from_order_and_cardinality(1, 4415).unwrap(),
