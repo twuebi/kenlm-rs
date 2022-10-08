@@ -1,4 +1,3 @@
-#[cfg(test)]
 use std::{
     fs,
     io::{BufRead, BufReader},
@@ -42,7 +41,9 @@ fn check_prob_for_order(thing: &[ProbNgram], expectation: Vec<ProbNgram>) {
 
 #[test]
 fn test_reads() {
-    let (with_backoff, no_backoff) = read_arpa("test_data/arpa/lm_small.arpa").unwrap();
+    let fd = std::fs::File::open("test_data/arpa/lm_small.arpa").unwrap();
+    let br = BufReader::new(fd);
+    let (with_backoff, no_backoff) = read_arpa(br).unwrap();
     assert_eq!(with_backoff.len(), 2);
     let uni_expect = get_unigrams();
     check_probbackoff_for_order(&with_backoff[0], uni_expect);

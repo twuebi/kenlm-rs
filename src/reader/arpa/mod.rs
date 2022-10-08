@@ -1,6 +1,6 @@
 use itertools::Itertools;
 use std::{
-    io::{BufRead, BufReader, Lines},
+    io::{BufRead, Lines},
     num::NonZeroUsize,
 };
 
@@ -33,16 +33,6 @@ pub enum ArpaReadError {
     #[error("The no-backoff section is malformed.")]
     NoBackoffSectionError,
 }
-
-const ARPA_NGRAM_SECION_HEADERS: [&str; 7] = [
-    "\\1-grams:",
-    "\\2-grams:",
-    "\\3-grams:",
-    "\\4-grams:",
-    "\\5-grams:",
-    "\\6-grams:",
-    "\\7-grams:",
-];
 
 pub enum ArpaSection {
     Backoff(Vec<ProbBackoffNgram>),
@@ -117,7 +107,7 @@ where
         if counts.is_empty() {
             return Err(ArpaReadError::NgramCountsMissing);
         }
-        let counts = counts.into_iter().collect::<_>();
+        let counts = counts.into_iter().collect();
         Ok(Counts::from_count_vec(counts)?)
     }
 
@@ -201,16 +191,12 @@ impl ProbBackoffNgram {
 }
 
 fn matches_ngram_section_header(line: &str, order: NonZeroUsize) -> Result<(), ArpaReadError> {
-    if (order.get() <= 7 && ARPA_NGRAM_SECION_HEADERS[order.get() - 1] != line)
-        || (order.get() > 7 && format!("\\{}-grams", order) != line)
-    {
+    let order = order.get();
+    let expected_header = format!("\\{}-grams", order);
+    if expected_header != line {
         return Err(ArpaReadError::NGramSectionHeaderMismatch(
             line.to_string(),
-            if order.get() < 7 {
-                ARPA_NGRAM_SECION_HEADERS[order.get() - 1].to_string()
-            } else {
-                format!("\\{}-grams", order)
-            },
+            expected_header,
         ));
     }
     Ok(())
@@ -241,12 +227,12 @@ fn read_backoff_section<B: BufRead>(
     Ok(prob_backoff_ngrams)
 }
 
-pub fn read_arpa(
-    file: &str,
-) -> Result<(Vec<Vec<ProbBackoffNgram>>, Vec<ProbNgram>), ArpaReadError> {
-    let reader = std::fs::File::open(file).unwrap();
-    let buf_read = BufReader::new(reader);
-
+pub fn read_arpa<B>(
+    buf_read: B,
+) -> Result<(Vec<Vec<ProbBackoffNgram>>, Vec<ProbNgram>), ArpaReadError>
+where
+    B: BufRead,
+{
     let reader = ArpaReader::new(buf_read.lines())?;
     let mut section_iter = reader.into_section_iter();
 

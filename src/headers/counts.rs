@@ -42,9 +42,9 @@ impl Counts {
     }
 
     pub fn get(&self, idx: NonZeroUsize) -> Option<&NGramCardinality> {
-        let usz: usize = idx.into();
-        // index is order - 1
-        self.counts.get(usz - 1)
+        let index: usize = idx.get();
+        // index is order - 1 and idx is guaranteed to be larger than zero
+        self.counts.get(index - 1)
     }
 
     pub fn order(&self) -> NonZeroUsize {
