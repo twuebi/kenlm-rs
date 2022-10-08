@@ -195,7 +195,7 @@ impl ProbBackoffNgram {
 
 fn matches_ngram_section_header(line: &str, order: NonZeroUsize) -> Result<(), ArpaReadError> {
     let order = order.get();
-    let expected_header = format!("\\{}-grams", order);
+    let expected_header = format!("\\{}-grams:", order);
     if expected_header != line {
         return Err(ArpaReadError::NGramSectionHeaderMismatch(
             line.to_string(),
