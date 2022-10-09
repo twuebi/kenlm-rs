@@ -1,4 +1,7 @@
+use fst::raw::Output;
+use fst::Map;
 use itertools::Itertools;
+use std::collections::HashMap;
 use std::io::Lines;
 use std::{io::BufRead, num::NonZeroUsize};
 
@@ -39,6 +42,201 @@ pub enum ArpaReadError {
     InvalidReaderState,
 }
 
+#[derive(Debug, Clone)]
+pub enum Scores {
+    Longest(f32),
+    Middle(ProbBackoff),
+}
+
+impl Scores {
+    fn backoff(&self) -> f32 {
+        match self {
+            Scores::Longest(_) => 0f32,
+            Scores::Middle(mid) => mid.backoff,
+        }
+    }
+    fn score(&self) -> f32 {
+        match self {
+            Scores::Longest(score) => *score,
+            Scores::Middle(mid) => mid.log_prob,
+        }
+    }
+}
+
+pub trait NGramIndexer<T> {
+    fn find(&self, middle: T) -> Vec<Scores>;
+    fn find_with_state(&self, state: State, new_word: u32) -> State;
+}
+
+#[derive(Debug)]
+pub struct State {
+    scores: Vec<Scores>,
+    words: Vec<u32>,
+    score: f32,
+    score_history: Vec<f32>,
+    ngram_length: usize,
+    word_history: Vec<u32>,
+    backoffs: Vec<f32>,
+}
+
+impl Default for State {
+    fn default() -> Self {
+        Self {
+            score: 0f32,
+            scores: vec![],
+            words: vec![],
+            ngram_length: 0,
+            score_history: vec![],
+            word_history: vec![],
+            backoffs: vec![],
+        }
+    }
+}
+
+impl<T> NGramIndexer<T> for FstIndexer
+where
+    T: NGramRep + std::fmt::Debug,
+{
+    fn find(&self, middle: T) -> Vec<Scores> {
+        let fst = self.fst.as_fst();
+        let mut cur_node = fst.root().addr();
+        let mut output = Output::zero();
+        let mut scores = vec![];
+        'outer: for w in (middle.to_word_chunks()) {
+            for b in w.iter() {
+                let next_node = fst.node(cur_node);
+
+                match next_node.find_input(*b).map(|t| next_node.transition(t)) {
+                    None => {
+                        break 'outer;
+                    }
+                    Some(next) => {
+                        cur_node = next.addr;
+                        let node = fst.node(cur_node);
+                        output = output.cat(next.out);
+                        if node.is_final() {
+                            scores.push(
+                                self.scores[output.cat(node.final_output()).value() as usize]
+                                    .clone(),
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        scores
+    }
+
+    fn find_with_state(&self, state: State, new_word: u32) -> State {
+        let mut out_state = State::default();
+
+        let (_, new) = state
+            .words
+            .split_at(((state.words.len()) - state.ngram_length).max(0));
+        let (_, new_scores) =
+            dbg!(&state.scores).split_at(((state.words.len()) - state.ngram_length).max(0));
+        let mut new = new.to_vec();
+        let new_scores = new_scores.to_vec();
+        new.push(new_word);
+        out_state.word_history = state.word_history;
+        out_state.word_history.push(new_word);
+        // p(troll | a) = p(troll) * b(a)
+        let r = dbg!(self.find(new.clone()));
+        let sc = r.iter().rev().cloned().next().unwrap();
+        out_state.backoffs = r
+            .iter()
+            .filter(|s| matches!(s, Scores::Middle(_)))
+            .map(|s| s.backoff())
+            .collect();
+        out_state.ngram_length = dbg!(out_state.backoffs.len());
+        let score = if dbg!(r.len()) != (dbg!(self.order)) {
+            tracing::debug!("short: {} {}", r.len(), self.order);
+            if sc.backoff() == 0.00 {
+                tracing::debug!("no extension");
+                out_state.words = vec![];
+            }
+            sc.score()
+                + dbg!(&state.backoffs)
+                    .iter()
+                    .skip(r.len().saturating_sub(1))
+                    .sum::<f32>()
+        } else {
+            sc.score()
+        };
+        out_state.score = score + state.score;
+        out_state.scores = new_scores;
+        out_state.scores.push(sc);
+        out_state.words = new;
+
+        (out_state)
+    }
+}
+
+pub struct FstIndexer {
+    pub fst: Map<Vec<u8>>,
+    pub scores: Vec<Scores>,
+    pub order: usize,
+}
+
+impl FstIndexer {
+    fn new<T: NGramRep>(sections: ArpaFileSections<T>) -> Self {
+        let ArpaFileSections {
+            counts,
+            backoffs,
+            no_backoff,
+        } = sections;
+        let mut scores =
+            Vec::with_capacity(counts.counts().iter().map(|cnt| cnt.cardinality).sum());
+
+        let iter = backoffs
+            .into_iter()
+            .flat_map(|nob| nob.into_iter())
+            .map(|it| (Scores::Middle(it.prob_backoff), it.ngram.to_bytes()))
+            .chain(
+                no_backoff
+                    .into_iter()
+                    .map(|nob| (Scores::Longest(nob.prob), nob.ngram.to_bytes())),
+            )
+            .enumerate()
+            .map(|(idx, (score, key))| {
+                // eprintln!("{key:?}, {idx} {score:?} {}", scores.len() + 1);
+                scores.push(score);
+                (key, idx as u64)
+            })
+            .sorted_by(|a, b| a.0.cmp(&b.0));
+        let fst = fst::map::Map::from_iter(iter).unwrap();
+        Self {
+            fst,
+            scores,
+            order: counts.order().get(),
+        }
+    }
+}
+
+pub struct HashMapIndexer {
+    pub map: HashMap<Vec<u32>, Scores>,
+}
+//
+// impl NGramIndexer<&[u32]> for HashMapIndexer {
+//     fn find(&self, query: &[u32]) -> Vec<Scores> {
+//         if query.is_empty() {
+//             return vec![self.map.get(&[0]).unwrap().clone()]
+//         }
+//         match self.map.get(query) {
+//             None => { self.find(&query[1..]) },
+//             Some(scr) => vec![scr.clone()],
+//         }
+//     }
+//
+//     fn find_with_state(&self, mut state: State, new_word: u32) -> (State) {
+//         state.words.push(new_word);
+//         state.ngram_length = (state.ngram_length + 1).min(2);
+//
+//         let scores = self.find(&state.words);
+//
+//     }
+// }
+
 pub struct ArpaModel<T>
 where
     T: NGramRep,
@@ -60,6 +258,7 @@ pub trait NGramProcessor {
     type Output;
 
     fn process_ngram<'a>(&mut self, pieces: impl Iterator<Item = &'a str>) -> Self::Output;
+    fn into_mapping(self) -> Mappings;
 }
 
 pub struct StringProcessor;
@@ -70,9 +269,13 @@ impl NGramProcessor for StringProcessor {
     fn process_ngram<'a>(&mut self, mut pieces: impl Iterator<Item = &'a str>) -> Self::Output {
         pieces.join(" ")
     }
+
+    fn into_mapping(self) -> Mappings {
+        Mappings::NoOp
+    }
 }
 
-pub struct IntVocabProcessor(Box<dyn BidirectionalMapping<u32, String>>);
+pub struct IntVocabProcessor(Mappings);
 
 impl NGramProcessor for IntVocabProcessor {
     type Output = Vec<u32>;
@@ -82,6 +285,10 @@ impl NGramProcessor for IntVocabProcessor {
             .map(|pc| self.0.insert_or_get_index(pc.to_string()))
             .collect()
     }
+
+    fn into_mapping(self) -> Mappings {
+        self.0
+    }
 }
 
 pub struct NoOpProc;
@@ -90,6 +297,10 @@ impl NGramProcessor for NoOpProc {
     type Output = ();
 
     fn process_ngram<'a>(&mut self, _: impl Iterator<Item = &'a str>) -> Self::Output {}
+
+    fn into_mapping(self) -> Mappings {
+        Mappings::NoOp
+    }
 }
 
 /// Arpa reader
@@ -170,17 +381,20 @@ where
     /// Consumes the remainder of the reader and parses it according to the count-header of the file
     /// returns a tuple where the first element are the backoff sections in ascending ngram order,
     /// the second element is the highest order section which has no backoff values.
-    pub fn into_arpa_sections(mut self) -> Result<ArpaFileSections<T::Output>, ArpaReadError> {
+    pub fn into_arpa_model(mut self) -> Result<ArpaModel<T::Output>, ArpaReadError> {
         let mut backoffs = vec![];
         while let Some(backoff) = self.next_backoff_section()? {
             backoffs.push(backoff)
         }
         let no_backoff = self.read_no_backoff_section()?;
         let Self { counts, .. } = self;
-        Ok(ArpaFileSections {
-            counts,
-            backoffs,
-            no_backoff,
+        Ok(ArpaModel {
+            vocab: self.ngram_processor.into_mapping(),
+            sections: ArpaFileSections {
+                counts,
+                backoffs,
+                no_backoff,
+            },
         })
     }
 
@@ -342,13 +556,13 @@ fn matches_ngram_section_header(line: &str, order: NonZeroUsize) -> Result<(), A
 pub fn read_arpa<B, T>(
     buf_read: B,
     ngram_processor: T,
-) -> Result<ArpaFileSections<T::Output>, ArpaReadError>
+) -> Result<ArpaModel<T::Output>, ArpaReadError>
 where
     B: BufRead,
     T: NGramProcessor,
     <T as NGramProcessor>::Output: NGramRep,
 {
-    ArpaReader::new(buf_read, ngram_processor)?.into_arpa_sections()
+    ArpaReader::new(buf_read, ngram_processor)?.into_arpa_model()
 }
 
 impl NGramCardinality {

@@ -3,12 +3,19 @@ use std::collections::HashMap;
 pub trait BidirectionalMapping<INDEX, VALUE> {
     fn insert_or_get_index(&mut self, value: VALUE) -> INDEX;
     fn get_index(&self, value: &VALUE) -> Option<&INDEX>;
-    fn get_value(&mut self, index: INDEX) -> Option<&VALUE>;
+    fn get_value(&self, index: INDEX) -> Option<&VALUE>;
     fn len(&self) -> usize;
 }
 #[derive(Debug)]
 pub enum Mappings {
     HashVecMap(HashMapVecMap),
+    NoOp,
+}
+
+impl Default for Mappings {
+    fn default() -> Self {
+        Self::HashVecMap(Default::default())
+    }
 }
 
 pub struct NoOPMapping;
@@ -25,7 +32,7 @@ where
         Default::default()
     }
 
-    fn get_value(&mut self, _: INDEX) -> Option<&VALUE> {
+    fn get_value(&self, _: INDEX) -> Option<&VALUE> {
         Default::default()
     }
 
@@ -38,24 +45,28 @@ impl BidirectionalMapping<u32, String> for Mappings {
     fn insert_or_get_index(&mut self, value: String) -> u32 {
         match self {
             Mappings::HashVecMap(hm) => hm.insert_or_get_index(value),
+            _ => Default::default(),
         }
     }
 
     fn get_index(&self, value: &String) -> Option<&u32> {
         match self {
             Mappings::HashVecMap(hm) => hm.get_index(value),
+            _ => Default::default(),
         }
     }
 
-    fn get_value(&mut self, index: u32) -> Option<&String> {
+    fn get_value(&self, index: u32) -> Option<&String> {
         match self {
             Mappings::HashVecMap(hm) => hm.get_value(index),
+            _ => Default::default(),
         }
     }
 
     fn len(&self) -> usize {
         match self {
             Mappings::HashVecMap(hm) => hm.len(),
+            _ => Default::default(),
         }
     }
 }
@@ -77,7 +88,7 @@ impl BidirectionalMapping<u32, String> for HashMapVecMap {
     fn get_index(&self, key: &String) -> Option<&u32> {
         self.s2val.get(key)
     }
-    fn get_value(&mut self, index: u32) -> Option<&String> {
+    fn get_value(&self, index: u32) -> Option<&String> {
         self.reverse.get(index as usize)
     }
     fn len(&self) -> usize {
