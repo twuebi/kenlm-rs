@@ -286,6 +286,10 @@ impl State {
         Self(state)
     }
 
+    pub fn len(&self) -> u8 {
+        self.0.as_ref().unwrap().length
+    }
+
     /// Fetches the words currently stored in this [State]
     pub fn words(&self) -> Vec<WordIdx> {
         self.0.words.iter().map(|c| WordIdx(*c)).collect::<Vec<_>>()
